@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+requests
+pymupdf
+Pillow
+paddleocr
+paddlepaddle
+onnxruntime>=1.21,<1.27
+python-dotenv

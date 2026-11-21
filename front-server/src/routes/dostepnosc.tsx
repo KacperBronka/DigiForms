@@ -1,0 +1,4 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { InfoPage } from '../components/layout/InfoPage'
+export const Route = createFileRoute('/dostepnosc')({ component: Page })
+function Page() { return <InfoPage title="Deklaracja dostępności" intro="Informacje o dostępności cyfrowej serwisu i sposobie zgłaszania problemów."><h2>Status dostępności</h2><p>Uzupełnij nazwę podmiotu, adres serwisu, daty publikacji i aktualizacji oraz status zgodności z wymaganiami dostępności po przeprowadzeniu oceny.</p><h2>Informacje zwrotne i kontakt</h2><p>Podaj dane kontaktowe osoby lub jednostki odpowiedzialnej za przyjmowanie zgłoszeń dotyczących dostępności oraz opisz sposób składania wniosków i skarg.</p><h2>Ocena dostępności</h2><p>Uzupełnij datę sporządzenia deklaracji, metodę oceny oraz informacje o niedostępnych treściach i dostępności architektonicznej, o ile mają zastosowanie.</p></InfoPage> }

@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: ./parser-server
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      EDENAI_API_KEY: "${EDENAI_API_KEY:-}"
+      PYTHONUNBUFFERED: "1"
+      PORT: "3000"
+
+  front-server:
+    build:
+      context: ./front-server
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DOCUMENT_PROCESSOR_URL: "http://app:3000/upload"
+      DOCUMENT_PROCESSOR_TOKEN: "${DOCUMENT_PROCESSOR_TOKEN:-}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-}"
+      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:3000}"
+    depends_on:
+      - app

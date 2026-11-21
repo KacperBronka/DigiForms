@@ -1,0 +1,4 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { InfoPage } from '../components/layout/InfoPage'
+export const Route = createFileRoute('/polityka-prywatnosci')({ component: Page })
+function Page() { return <InfoPage title="Polityka prywatności i RODO" intro="Informacje o przetwarzaniu danych osobowych w serwisie."><h2>Administrator danych</h2><p>Uzupełnij nazwę i dane kontaktowe administratora oraz, jeśli został wyznaczony, inspektora ochrony danych.</p><h2>Jak przetwarzamy dane</h2><p>Opisz cele i podstawy prawne przetwarzania, kategorie danych, odbiorców oraz okresy ich przechowywania. Uwzględnij informacje o przekazywaniu danych poza EOG, jeśli ma to zastosowanie.</p><h2>Twoje prawa</h2><p>Wskaż sposób realizacji praw osób, których dane dotyczą, w tym prawa dostępu, sprostowania i wniesienia skargi do Prezesa Urzędu Ochrony Danych Osobowych. Opisz pozostałe prawa mające zastosowanie do danego przetwarzania.</p></InfoPage> }
