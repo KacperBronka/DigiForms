@@ -45,41 +45,6 @@ The build output is a self-contained Node server. To deploy, push the `.output/`
 For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
 
 
-## Setting up Better Auth
-
-1. Generate and set the `BETTER_AUTH_SECRET` environment variable in your `.env.local`:
-
-   ```bash
-   npx -y @better-auth/cli secret
-   ```
-
-2. Visit the [Better Auth documentation](https://www.better-auth.com) to unlock the full potential of authentication in your app.
-
-### Adding a Database (Optional)
-
-Better Auth can work in stateless mode, but to persist user data, add a database:
-
-```typescript
-// src/lib/auth.ts
-import { betterAuth } from "better-auth";
-import { Pool } from "pg";
-
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL,
-  }),
-  // ... rest of config
-});
-```
-
-Then run migrations:
-
-```bash
-npx -y @better-auth/cli migrate
-```
-
-
-
 ## Routing
 
 This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
@@ -253,16 +218,16 @@ Komponent udostępnia wybrany plik przez `onChange`; walidację i przesyłanie n
 
 ## Przetwarzanie dokumentów i edycja formularza
 
-Domyślny adres serwera przetwarzającego to `http://localhost:3001`. Aby użyć innego adresu, ustaw po stronie serwera `DOCUMENT_PROCESSOR_URL` na pełny adres endpointu. Opcjonalnie ustaw `DOCUMENT_PROCESSOR_TOKEN`, aby dodać nagłówek `Authorization: Bearer …`. Aplikacja wysyła plik żądaniem `POST` jako `multipart/form-data` pod kluczem `file` i oczekuje bezpośrednio definicji formularza JSON w odpowiedzi. Rzeczywisty kontrakt serwera może wymagać dostosowania funkcji `processDocument` w `src/routes/api/process-document.ts`. Dane konfiguracyjne nie są udostępniane przeglądarce.
+Domyślny adres serwera przetwarzającego to `http://localhost:3001/upload`. Aby użyć innego adresu, ustaw po stronie serwera `DOCUMENT_PROCESSOR_URL` na pełny adres endpointu. Endpoint nie wymaga uwierzytelniania. Aplikacja wysyła plik żądaniem `POST` jako `multipart/form-data` pod kluczem `file` i oczekuje bezpośrednio definicji formularza JSON w odpowiedzi. Rzeczywisty kontrakt serwera może wymagać dostosowania funkcji `processDocument` w `src/routes/api/process-document.ts`. Dane konfiguracyjne nie są udostępniane przeglądarce.
 
-Pliki PDF, DOC, DOCX, ODS, XLSX, JPG i PNG mogą mieć do 20 MB. Po przetworzeniu użytkownik edytuje wynik i zatwierdza go przed podglądem końcowym i pobraniem JSON-a. Wersja robocza jest przechowywana w `sessionStorage` bieżącej karty; niezastosowane zmiany w polu zaawansowanego JSON-a trzeba zastosować przed opuszczeniem edytora. Lokalne pliki JSON nadal otwierają się bezpośrednio w podglądzie.
+Pliki PDF, DOC, DOCX, ODS, XLSX, JPG, JPEG i PNG podlegają limitowi `MAX_UPLOAD_BYTES` (domyślnie 20 MiB). Po przetworzeniu użytkownik edytuje wynik i zatwierdza go przed podglądem końcowym i pobraniem JSON-a. Wersja robocza jest przechowywana w `sessionStorage` bieżącej karty; niezastosowane zmiany w polu zaawansowanego JSON-a trzeba zastosować przed opuszczeniem edytora. Pliki JSON nie są akceptowane jako upload.
 
 ## Running with Docker Compose
 
-From the repository root, set `EDENAI_API_KEY` and `BETTER_AUTH_SECRET` in your environment or a root `.env` file, then run:
+From the repository root, set `EDENAI_API_KEY` in your environment or a root `.env` file, then run:
 
 ```bash
 docker compose up --build
 ```
 
-The frontend is available at http://localhost:3000. Compose connects its server to the parser at `http://app:3000/upload`; the parser is also available on host port 3001. Set `BETTER_AUTH_URL` to the public frontend URL when deploying somewhere other than localhost. `DOCUMENT_PROCESSOR_TOKEN` is optional.
+The frontend is available at http://localhost:3000. Compose connects it to the parser at `http://app:3000/upload`; the parser port is not published on the host. Upload endpoints are public and do not require login or access tokens. See the [root README](../README.md) for configuration and processing safeguards.

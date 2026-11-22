@@ -42,8 +42,6 @@ export async function processDocument(request: Request): Promise<Response> {
     const headers = new Headers()
     const requestId = request.headers.get('X-Request-ID')
     if (requestId) headers.set('X-Request-ID', requestId)
-    const authorization = request.headers.get('Authorization')
-    if (authorization) headers.set('Authorization', authorization)
     const result = await fetch(endpoint, { method: 'POST', body, headers, signal: AbortSignal.timeout(timeout) })
     if (!result.ok) {
       const status = [400, 401, 403, 413, 415, 422, 429, 503, 504].includes(result.status) ? result.status : 502

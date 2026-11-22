@@ -16,9 +16,7 @@ import time
 from uuid import uuid4
 
 import requests
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from upload_validation import validate_filename, UploadBodyLimit
 from job_control import JobAdmission, run_job, save_upload
 import httpx
@@ -233,25 +231,7 @@ def process_upload(file: UploadFile):
         return run_job('api', source, file.content_type, settings.JOB_TIMEOUT_SECONDS)
 
 
-bearer = HTTPBearer(auto_error=False)
-
-
-def authorize(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-    if not settings.JWT_ENABLED:
-        return
-    try:
-        if credentials is None:
-            raise jwt.InvalidTokenError('Missing bearer token')
-        jwt.decode(credentials.credentials, settings.JWT_KEY,
-                   algorithms=[settings.JWT_ALGORITHM], issuer=settings.JWT_ISSUER,
-                   audience=settings.JWT_AUDIENCE,
-                   options={"require": ["exp", "iss", "aud", "sub"]})
-    except jwt.InvalidTokenError as exc:
-        raise HTTPException(401, 'Invalid or missing bearer token.',
-                            headers={"WWW-Authenticate": "Bearer"}) from exc
-
-
-@app.post("/upload", dependencies=[Depends(authorize)])
+@app.post("/upload")
 async def upload_document(request: Request, file: UploadFile = File(...)):
     """Upload a supported document and wait for the generated form JSON."""
     try:

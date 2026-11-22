@@ -100,7 +100,7 @@ http {{
     def test_general_budget(self):
         self.start_proxy(general_rate='1', general_burst='1')
         self.assertEqual(self.request('/')[0], 200)
-        self.assertEqual(self.request('/api/auth/session')[0], 200)
+        self.assertEqual(self.request('/kontakt')[0], 200)
         self.assertEqual(self.request('/api/health')[0], 429)
 
 

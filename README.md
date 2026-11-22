@@ -4,13 +4,11 @@ Wymagania: Docker Engine z BuildKit i Docker Compose v2 lub nowszy.
 
 ```sh
 cp .env.example .env
-openssl rand -hex 32
 ```
 
-Uzupełnij `.env`: wpisz klucz `EDENAI_API_KEY` i wygenerowany sekret
-`BETTER_AUTH_SECRET`. Dla publicznego wdrożenia ustaw `BETTER_AUTH_URL` na
-rzeczywisty adres aplikacji. Plik `.env` jest ignorowany przez Git i konteksty
-budowania; wartości trafiają do kontenerów wyłącznie podczas uruchamiania.
+Uzupełnij `.env`, wpisując klucz `EDENAI_API_KEY`. Plik `.env` jest ignorowany
+przez Git i konteksty budowania; wartości trafiają do kontenerów wyłącznie
+podczas uruchamiania.
 Można również dostarczyć je jako zmienne środowiskowe z systemu wdrożeniowego.
 Nie przekazuj sekretów przez Dockerfile, build args ani zmienne `VITE_*`.
 
@@ -69,23 +67,10 @@ kontenerów; po zmianie wartości wykonaj ponownie `docker compose up -d`.
 | `EDENAI_READ_TIMEOUT_SECONDS` | `180` | Dodatni timeout odczytu Eden AI w sekundach |
 | `DOCUMENT_PROCESSOR_URL` | `http://localhost:3001/upload` | Adres parsera dla frontendu; Compose ustawia `http://app:3000/upload` |
 | `DOCUMENT_PROCESSOR_TIMEOUT_MS` | `270000` | Dodatni timeout połączenia frontend–parser w ms |
-| `BETTER_AUTH_SECRET` | wymagany w Compose | Sekret Better Auth, minimum 32 losowe znaki |
-| `BETTER_AUTH_URL` | `http://localhost:3000` | Publiczny adres aplikacji |
-| `JWT_ENABLED` | `false` | `true` wymaga JWT na endpointach przesyłania dokumentów |
-| `JWT_ALGORITHM` | `HS256` | Dozwolony algorytm: `HS256` lub `RS256` |
-| `JWT_KEY` | brak | Sekret HS256 (min. 32 bajty) lub klucz publiczny PEM dla RS256; dopuszczalne literalne `\n` w PEM |
-| `JWT_ISSUER` | brak | Wymagana wartość `iss` po włączeniu JWT |
-| `JWT_AUDIENCE` | brak | Wymagana wartość `aud` po włączeniu JWT |
 | `PORT` | parser: `3001` | Port procesu; Compose ustawia `3000` |
 
-JWT wymaga poprawnego podpisu oraz pól `exp`, `iss`, `aud`, `sub`; tokeny
-przeterminowane, z innym wystawcą/odbiorcą lub algorytmem są odrzucane.
-Błędna konfiguracja JWT zatrzymuje start parsera. Tokeny wystawia zewnętrzny
-system uwierzytelniania. Better Auth i weryfikacja JWT parsera to osobne mechanizmy:
-obecny interfejs przeglądarkowy nie pozyskuje JWT automatycznie. Po włączeniu JWT
-klient API musi przesyłać `Authorization: Bearer <token>`; frontend przekazuje ten
-nagłówek do parsera. Dawny `DOCUMENT_PROCESSOR_TOKEN` nie jest używany, aby publiczny
-frontend nie nadawał anonimowym żądaniom uprawnień tokenu serwisowego.
+Endpointy aplikacji są publiczne i nie wymagają logowania ani tokenu dostępu.
+Obowiązują limity żądań, rozmiaru pliku i zasobów przetwarzania.
 
 ## Walidacja przesyłanych dokumentów
 
@@ -116,15 +101,11 @@ Adres bazowy przez Compose: `http://localhost:3000`.
 | `POST /api/upload` | Bezpośrednia trasa proxy do parsera; odpowiedź JSON formularza |
 | `GET /api/health` | Działanie API: `{"status":"ready"}` |
 | `GET /api/openapi.json` | Specyfikacja OpenAPI parsera (wewnętrzne ścieżki `/upload`, `/health`) |
-| `/api/auth/*` | Endpointy Better Auth obsługiwane przez frontend |
 
-Upload wymaga `multipart/form-data` z pojedynczym polem `file`. Przy włączonym JWT
-oba endpointy uploadu wymagają nagłówka Bearer. Przykład (zmienna `JWT_TOKEN`
-pochodzi od wystawcy tokenów; przy wyłączonym JWT pomiń nagłówek):
+Upload wymaga `multipart/form-data` z pojedynczym polem `file`. Przykład:
 
 ```sh
 curl --fail-with-body http://localhost:3000/api/upload \
-  -H "Authorization: Bearer ${JWT_TOKEN}" \
   -F 'file=@formularz.pdf;type=application/pdf'
 ```
 
@@ -135,7 +116,6 @@ Parser zwraca błędy jako `{"detail":"opis"}`, a endpoint frontendu jako
 | Status | Znaczenie |
 | --- | --- |
 | `400` | Niedozwolona nazwa, pusty/uszkodzony dokument lub błędne multipart |
-| `401` | Brak lub niepoprawny JWT |
 | `413` | Przekroczenie limitu pliku lub całego żądania |
 | `415` | Nieobsługiwane rozszerzenie lub niezgodność MIME/zawartości |
 | `422` | Brak wymaganego pola `file` w API parsera |
@@ -144,7 +124,7 @@ Parser zwraca błędy jako `{"detail":"opis"}`, a endpoint frontendu jako
 | `503` | Brak klucza Eden AI, niedostępny worker, pełna kolejka lub przekroczony czas oczekiwania |
 | `504` | Przekroczony czas wykonania zadania; proces zadania zostaje zabity |
 
-Endpoint zdrowia i specyfikacja OpenAPI nie wymagają JWT.
+Endpoint zdrowia i specyfikacja OpenAPI są publiczne.
 
 ## Ograniczenie częstotliwości żądań
 
@@ -182,8 +162,7 @@ na podmianę `X-Forwarded-For` i odnowienie budżetu po upływie czasu.
 ## Izolacja, sanityzacja i zasoby
 
 Przepływ: nginx → frontend/API → worker offline (MIME, konwersja, sanityzacja,
-OCR) → API → Eden AI. Worker nie otrzymuje `EDENAI_API_KEY`, `JWT_KEY` ani
-sekretu Better Auth. `network_mode: none` odcina go od sieci; komunikacja z API
+OCR) → API → Eden AI. Worker nie otrzymuje `EDENAI_API_KEY` ani innych sekretów integracji. `network_mode: none` odcina go od sieci; komunikacja z API
 odbywa się wyłącznie przez socket Unix we współdzielonym wolumenie.
 Wolumen nie przechowuje dokumentów. API montuje go tylko do odczytu.
 

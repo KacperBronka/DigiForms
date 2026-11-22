@@ -4,7 +4,6 @@ import { createServer } from 'vite'
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, optimizeDeps: { noDiscovery: true }, appType: 'custom' })
 const oldFetch = globalThis.fetch
 const oldUrl = process.env.DOCUMENT_PROCESSOR_URL
-const oldToken = process.env.DOCUMENT_PROCESSOR_TOKEN
 try {
   const { setDefinitionValue, moveItem, sortedQuestions, queryErrors } = await server.ssrLoadModule('/src/components/form/DefinitionEditor.tsx')
   const { processDocument } = await server.ssrLoadModule('/src/routes/api/process-document.ts')
@@ -20,14 +19,13 @@ try {
   assert.equal(queryErrors(setDefinitionValue(edited, ['tabs', 0, 'questions', 0, 'field', 'states', 0, 'query'], '(')).length, 1)
   const request = (name = 'wniosek.pdf') => { const form = new FormData(); form.append('file', new File(['sample'], name, { type: 'application/pdf' })); return new Request('http://localhost/api/process-document', { method: 'POST', body: form }) }
   delete process.env.DOCUMENT_PROCESSOR_URL
-  globalThis.fetch = async (url) => { assert.equal(url, 'http://localhost:3001'); return Response.json(definition) }
+  globalThis.fetch = async (url) => { assert.equal(url, 'http://localhost:3001/upload'); return Response.json(definition) }
   assert.equal((await processDocument(request())).status, 200)
   process.env.DOCUMENT_PROCESSOR_URL = 'https://processor.example.test/process'
-  process.env.DOCUMENT_PROCESSOR_TOKEN = 'test-token'
   globalThis.fetch = async (url, options) => {
     assert.equal(url, process.env.DOCUMENT_PROCESSOR_URL)
     assert.equal(options.method, 'POST')
-    assert.equal(options.headers.get('Authorization'), 'Bearer test-token')
+    assert.equal(options.headers.get('Authorization'), null)
     assert.equal(options.body.get('file').name, 'wniosek.pdf')
     return Response.json(definition)
   }
@@ -45,6 +43,5 @@ try {
 } finally {
   globalThis.fetch = oldFetch
   if (oldUrl === undefined) delete process.env.DOCUMENT_PROCESSOR_URL; else process.env.DOCUMENT_PROCESSOR_URL = oldUrl
-  if (oldToken === undefined) delete process.env.DOCUMENT_PROCESSOR_TOKEN; else process.env.DOCUMENT_PROCESSOR_TOKEN = oldToken
   await server.close()
 }

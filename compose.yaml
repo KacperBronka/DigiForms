@@ -41,11 +41,6 @@ services:
       SERVICE_NAME: api
       EDENAI_API_KEY: "${EDENAI_API_KEY:?Set EDENAI_API_KEY in the runtime environment}"
       MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
-      JWT_ENABLED: "${JWT_ENABLED:-false}"
-      JWT_ALGORITHM: "${JWT_ALGORITHM:-HS256}"
-      JWT_KEY: "${JWT_KEY:-}"
-      JWT_ISSUER: "${JWT_ISSUER:-}"
-      JWT_AUDIENCE: "${JWT_AUDIENCE:-}"
       EDENAI_MODEL: "${EDENAI_MODEL:-gemma-4-31b-it}"
       EDENAI_READ_TIMEOUT_SECONDS: "${EDENAI_READ_TIMEOUT_SECONDS:-180}"
       PYTHONUNBUFFERED: "1"
@@ -107,8 +102,6 @@ services:
       DOCUMENT_PROCESSOR_URL: "http://app:3000/upload"
       MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
       DOCUMENT_PROCESSOR_TIMEOUT_MS: "${DOCUMENT_PROCESSOR_TIMEOUT_MS:-270000}"
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in the runtime environment}"
-      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:3000}"
     depends_on:
       - app
 
