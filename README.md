@@ -3,7 +3,7 @@
 
 digiForms, to system stworzony do digitalizacji istniejacych juz formularzy do podanego schematu JSON. 
 Narzędzie w obecnej fazie składa się z:
- - **warstwy wizualnej** - serwera frontend
+ - **warstwy wizualnej** - serwera frontend**
  - **warstwy technicznej** - serwera backend, który prztwarza pliki
 
 ## Uruchomienie
@@ -14,7 +14,10 @@ Narzędzie w obecnej fazie składa się z:
  - `cd DigiForms`
  - `cp .env.example .env`
  - Uzupełniamy .env kluczem EdenAI
- - `docker compose up` (jako admin)
+ - `docker compose up --build` (jako admin)
+ 
+ Aplikacja jest teraz dostępna pod adresem: *127.0.0.1:3000*
+ W przypadku chęci dostępu do API możemy to zrobić pod: *127.0.0.1:3000/api*
 
 ## Działanie aplikacji
 
@@ -66,6 +69,13 @@ Powodem tej decyzji są:
   - css-loader, mini-css-extract-plugin — obsługa CSS
   - html-webpack-plugin — generowanie HTML
 
+## Dokumentacja API:
+
+- test dzialania: **localhost:3000/api/health**
+  `curl localhost:3000/api/health` - powinien zwrocic json z wartoscia *good*
+- Test dzialania parse'owania dokumnentów: **localhost:3000/api/health**
+  `curl -F 'file=@SCIEZKA_DO_DOKUMENTU' http://localhost:3000/api/process-document`
+  (opcjonalnie -o 'PLIK_WYJSCIOWY.json')
  
 ## Autorzy:
 
