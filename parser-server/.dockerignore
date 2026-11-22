@@ -1,0 +1,11 @@
+**
+!Dockerfile
+!requirements.txt
+!main.py
+!document_converter.py
+!upload_validation.py
+!guidelines.json
+!GuideLines.md
+!AGENTS.md
+!settings.py
+!auth.py

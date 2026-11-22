@@ -6,7 +6,8 @@ Upload: POST /upload with a multipart file field named "file".
 The local OCR model loads once during startup, before accepting requests.
 Set EDENAI_API_KEY in the environment or the .env file next to this script.
 """
-from document_converter import SUPPORTED_FORMATS, prepare_pdf
+from document_converter import prepare_pdf
+from upload_validation import validate_metadata, validate_content
 from contextlib import ExitStack, asynccontextmanager
 from tempfile import TemporaryDirectory
 from threading import Lock
@@ -16,7 +17,6 @@ import hashlib
 import io
 import json
 import logging
-import os
 import re
 import time
 
@@ -25,27 +25,21 @@ import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from starlette.concurrency import run_in_threadpool
 from PIL import Image
-from dotenv import dotenv_values, load_dotenv
+from settings import settings
+from auth import authenticate
+from fastapi.responses import JSONResponse
 
-# =================== CONFIG ===================
-ENV_PATH = Path(__file__).resolve().parent / ".env"
-load_dotenv(ENV_PATH)
-# An empty inherited variable otherwise masks the value in .env.
-API_KEY = os.environ.get("EDENAI_API_KEY") or dotenv_values(ENV_PATH).get("EDENAI_API_KEY") or ""
-MODEL = "amazon/anthropic.claude-haiku-5-5@eu"
-# MODEL = "azure/mistral-large-3@eu"
-
-MAX_OCR_CHARS = 160_000
-MAX_IMAGE_PAGES = 1          # Only first four pages; set to 0 for OCR-only
-IMAGE_DPI = 150             # Raise to 200 if tiny controls are missed
-JPEG_QUALITY = 78
-USE_CACHED_OCR = True        # Cache is linked to document content hash
-# ===================================================
-
+API_KEY = settings.api_key
+MODEL = settings.model
+MAX_OCR_CHARS = settings.max_ocr_chars
+MAX_IMAGE_PAGES = settings.max_image_pages
+IMAGE_DPI = settings.image_dpi
+JPEG_QUALITY = settings.jpeg_quality
+USE_CACHED_OCR = True
 BASE_DIR = Path(__file__).resolve().parent
-API_URL = "https://api.edenai.run/v3/chat/completions"
+API_URL = settings.api_url
 logger = logging.getLogger(__name__)
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_UPLOAD_BYTES = settings.max_upload_bytes
 
 
 def load_ocr():
@@ -53,9 +47,9 @@ def load_ocr():
     from paddleocr import PaddleOCR
 
     return PaddleOCR(
-        lang="pl",
-        ocr_version="PP-OCRv6",
-        device="cpu",
+        lang=settings.ocr_lang,
+        ocr_version=settings.ocr_version,
+        device=settings.ocr_device,
         engine="onnxruntime",
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
@@ -75,6 +69,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FormForge", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def verify_upload_token(request: Request, call_next):
+    # Authenticate before parsing or buffering the multipart body.
+    if request.url.path.rstrip("/") == "/upload":
+        try:
+            request.state.identity = authenticate(request.headers.get("Authorization"), settings)
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+    return await call_next(request)
 
 
 def document_sha256(path: Path) -> str:
@@ -245,7 +250,7 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
             },
             json=payload,
             stream=True,
-            timeout=(15, None),
+            timeout=(settings.connect_timeout, settings.read_timeout),
         ) as response:
             if not response.ok:
                 raise RuntimeError(
@@ -332,10 +337,12 @@ def process_upload(file: UploadFile, suffix: str, ocr, ocr_lock):
             while chunk := file.file.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(status_code=413, detail="Maximum upload size is 50 MiB.")
+                    raise HTTPException(status_code=413, detail=f"Maksymalny rozmiar pliku to {MAX_UPLOAD_BYTES} bajtów.")
                 output.write(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+        validate_content(document_path, suffix)
 
         # Catch input errors only while entering the converter; errors from OCR
         # or the upstream model must not be reported as malformed uploads.
@@ -359,12 +366,7 @@ def process_upload(file: UploadFile, suffix: str, ocr, ocr_lock):
 async def upload_document(request: Request, file: UploadFile = File(...)):
     """Upload a supported document and wait for the generated form JSON."""
     try:
-        suffix = Path(file.filename or "").suffix.lower()
-        if suffix not in SUPPORTED_FORMATS:
-            raise HTTPException(
-                status_code=415,
-                detail=f"Supported formats: {', '.join(sorted(SUPPORTED_FORMATS))}",
-            )
+        suffix = validate_metadata(file.filename or "", file.content_type)
         if not API_KEY:
             raise HTTPException(status_code=503, detail="EDENAI_API_KEY is not configured.")
         return await run_in_threadpool(
@@ -382,7 +384,7 @@ async def health():
 def main():
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "3001")))
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)
 
 
 if __name__ == "__main__":

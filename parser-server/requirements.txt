@@ -8,3 +8,5 @@ paddleocr
 paddlepaddle
 onnxruntime>=1.21,<1.27
 python-dotenv
+olefile
+PyJWT[crypto]==2.15.1
