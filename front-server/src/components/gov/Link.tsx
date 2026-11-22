@@ -1,7 +1,6 @@
 "use client";
-import * as React from "react";
-import { classes, FieldLayout, Choice, noticeTitles } from "./shared";
-import type { Native, Content, Element, Field, WithRef, Variant, ChoiceProps, Crumb, NoticeType, TabItem } from "./shared";
+import { classes } from "./shared";
+import type { Native, Element } from "./shared";
 
 export function Link({ className, ...props }: Native<"a"> & { href: string }): Element {
   return <a {...props} className={classes("gp-link", className)} />;

@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
-import { classes, FieldLayout, Choice, noticeTitles } from "./shared";
-import type { Native, Content, Element, Field, WithRef, Variant, ChoiceProps, Crumb, NoticeType, TabItem } from "./shared";
+import { classes, FieldLayout } from "./shared";
+import type { Field, WithRef } from "./shared";
 
 export const TextInput: WithRef<Field<"input">, HTMLInputElement> =
   React.forwardRef(({ label, hint, error, className, ...props }, ref) =>

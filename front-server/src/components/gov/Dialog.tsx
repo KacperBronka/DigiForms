@@ -1,7 +1,6 @@
 "use client";
 import * as React from "react";
-import { classes, FieldLayout, Choice, noticeTitles } from "./shared";
-import type { Native, Content, Element, Field, WithRef, Variant, ChoiceProps, Crumb, NoticeType, TabItem } from "./shared";
+import type { Content, Element } from "./shared";
 import { Button } from "./Button";
 
 export function Dialog({ trigger, title, children, closeLabel = "Zamknij" }: {

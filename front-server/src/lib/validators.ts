@@ -1,18 +1,24 @@
 type Rule = { pattern: RegExp; check?: (s: string) => boolean }
-const digits = (s: string) => [...s].map(c => /\d/.test(c) ? Number(c) : c.charCodeAt(0) - 55)
-const sum = (s: string, weights: number[]) => weights.reduce((a, w, i) => a + w * digits(s)[i], 0)
+function digitValue(character: string) {
+  return /\d/.test(character) ? Number(character) : character.charCodeAt(0) - 55
+}
+
+function weightedSum(value: string, weights: number[]) {
+  return weights.reduce((total, weight, index) => total + weight * digitValue(value[index]), 0)
+}
+
 const rules: Record<string, Rule> = {
-  PESEL: { pattern: /^\d{11}$/, check: s => (10 - sum(s, [1,3,7,9,1,3,7,9,1,3]) % 10) % 10 === digits(s)[10] },
-  NIP: { pattern: /^\d{10}$/, check: s => sum(s, [6,5,7,2,3,4,5,6,7]) % 11 === digits(s)[9] },
-  REGON_9: { pattern: /^\d{9}$/, check: s => sum(s, [8,9,2,3,4,5,6,7]) % 11 % 10 === digits(s)[8] },
-  REGON_14: { pattern: /^\d{14}$/, check: s => sum(s, [2,4,8,5,0,9,7,3,6,1,2,4,8]) % 11 % 10 === digits(s)[13] },
-  ID_CARD: { pattern: /^[A-Z]{3}\d{6}$/, check: s => sum(s, [7,3,1,9,7,3,1,7,3]) % 10 === 0 },
-  PASSPORT: { pattern: /^[A-Z]{2}\d{7}$/, check: s => sum(s, [7,3,9,1,7,3,1,7,3]) % 10 === 0 },
+  PESEL: { pattern: /^\d{11}$/, check: s => (10 - weightedSum(s, [1,3,7,9,1,3,7,9,1,3]) % 10) % 10 === digitValue(s[10]) },
+  NIP: { pattern: /^\d{10}$/, check: s => weightedSum(s, [6,5,7,2,3,4,5,6,7]) % 11 === digitValue(s[9]) },
+  REGON_9: { pattern: /^\d{9}$/, check: s => weightedSum(s, [8,9,2,3,4,5,6,7]) % 11 % 10 === digitValue(s[8]) },
+  REGON_14: { pattern: /^\d{14}$/, check: s => weightedSum(s, [2,4,8,5,0,9,7,3,6,1,2,4,8]) % 11 % 10 === digitValue(s[13]) },
+  ID_CARD: { pattern: /^[A-Z]{3}\d{6}$/, check: s => weightedSum(s, [7,3,1,9,7,3,1,7,3]) % 10 === 0 },
+  PASSPORT: { pattern: /^[A-Z]{2}\d{7}$/, check: s => weightedSum(s, [7,3,9,1,7,3,1,7,3]) % 10 === 0 },
   NRB: { pattern: /^\d{26}$/, check: s => BigInt(s.slice(2) + '2521' + s.slice(0,2)) % 97n === 1n },
   LUHN: { pattern: /^\d{13,19}$/, check: s => [...s].reverse().reduce((a,c,i) => { let n = +c; if (i % 2) { n *= 2; if (n > 9) n -= 9 } return a + n }, 0) % 10 === 0 },
   EAN_13: { pattern: /^\d{13}$/, check: s => [...s].reduce((a,c,i) => a + +c * (i % 2 ? 3 : 1), 0) % 10 === 0 },
   LAND_REGISTER: { pattern: /^[A-Z0-9]{4}\/\d{8}\/\d$/, check: s => [...s.replace(/\//g, '')].slice(0,12).reduce((a,c,i) => a + [1,3,7][i % 3] * '0123456789XABCDEFGHIJKLMNOPRSTUWYZ'.indexOf(c), 0) % 10 === +s.slice(-1) },
-  PWZ: { pattern: /^\d{7}$/, check: s => [1,2,3,4,5,6].reduce((a,w,i) => a + w * digits(s)[i+1], 0) % 11 === digits(s)[0] },
+  PWZ: { pattern: /^\d{7}$/, check: s => [1,2,3,4,5,6].reduce((a,w,i) => a + w * digitValue(s[i+1]), 0) % 11 === digitValue(s[0]) },
   KRS: { pattern: /^\d{10}$/ }, ZIP_CODE: { pattern: /^\d{2}-\d{3}$/ },
   PHONE_PL: { pattern: /^(\+48)?[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{3}$/ }, PHONE_E164: { pattern: /^\+[1-9]\d{1,14}$/ },
   EMAIL: { pattern: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/, check: s => s.length <= 254 }, PKD: { pattern: /^\d{2}\.\d{2}\.[A-Z]$/ },

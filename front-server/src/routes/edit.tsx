@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Breadcrumbs, Button, Link, Notice } from '#/components/gov'
 import { DefinitionEditor, queryErrors } from '#/components/form/DefinitionEditor'
 import { GeneratedForm, isFormDefinition } from '#/components/form/GeneratedForm'
-import { DRAFT_KEY, FORM_KEY, readStored } from '#/lib/formDraft'
+import { DRAFT_KEY, FORM_KEY, readStored, writeStored } from '#/lib/formDraft'
 import type { StoredFile } from '#/lib/formDraft'
 
 export const Route = createFileRoute('/edit')({ component: Edit })
@@ -22,12 +22,12 @@ function Edit() {
     const next = { ...file, data }
     setFile(next)
     setShowPreview(false)
-    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(next)); setError('') }
+    try { writeStored(DRAFT_KEY, next); setError('') }
     catch { setError('Nie udało się zapisać wersji roboczej. Zmiany pozostają dostępne tylko do zamknięcia lub odświeżenia strony.') }
   }
   function approve() {
     if (!file || !isFormDefinition(file.data) || pending || queryErrors(file.data).length) return
-    try { sessionStorage.setItem(FORM_KEY, JSON.stringify({ ...file, approved: true })) }
+    try { writeStored(FORM_KEY, { ...file, approved: true }) }
     catch { setError('Nie udało się zapisać zatwierdzonego formularza. Sprawdź dostępne miejsce w przeglądarce.'); return }
     void navigate({ to: '/view' })
   }

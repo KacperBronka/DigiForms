@@ -1,7 +1,5 @@
 "use client";
-import * as React from "react";
-import { classes, FieldLayout, Choice, noticeTitles } from "./shared";
-import type { Native, Content, Element, Field, WithRef, Variant, ChoiceProps, Crumb, NoticeType, TabItem } from "./shared";
+import type { Element, Crumb } from "./shared";
 import { Link } from "./Link";
 
 export function Breadcrumbs({ ancestors, current, label = "Ścieżka nawigacji" }: {

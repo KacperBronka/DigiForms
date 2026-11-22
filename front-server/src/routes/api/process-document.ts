@@ -1,15 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-const allowed = /\.(pdf|doc|docx|ods|xlsx|jpg|jpeg|png)$/i
-const maxBytes = 20 * 1024 * 1024
+import { documentSizeError, isDocumentName, validDocumentSize } from '../../lib/documentUpload'
 
 export async function processDocument(request: Request): Promise<Response> {
   const endpoint = process.env.DOCUMENT_PROCESSOR_URL || 'http://localhost:3001'
   try {
     const form = await request.formData()
     const file = form.get('file')
-    if (!(file instanceof File) || !allowed.test(file.name)) return Response.json({ error: 'Nieobsługiwany plik.' }, { status: 400 })
-    if (file.size === 0 || file.size > maxBytes) return Response.json({ error: 'Plik musi mieć od 1 bajtu do 20 MB.' }, { status: 400 })
+    if (!(file instanceof File) || !isDocumentName(file.name)) return Response.json({ error: 'Nieobsługiwany plik.' }, { status: 400 })
+    if (!validDocumentSize(file.size)) return Response.json({ error: documentSizeError }, { status: 400 })
     const body = new FormData()
     body.append('file', file, file.name)
     const headers = new Headers()

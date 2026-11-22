@@ -2,6 +2,10 @@ export const DRAFT_KEY = 'digi-forms-draft'
 export const FORM_KEY = 'digi-forms-json'
 export type StoredFile = { name: string; data: unknown; approved?: boolean }
 
+export function writeStored(key: string, file: StoredFile) {
+  sessionStorage.setItem(key, JSON.stringify(file))
+}
+
 export function readStored(key: string): StoredFile | null {
   try {
     const value: unknown = JSON.parse(sessionStorage.getItem(key) || 'null')

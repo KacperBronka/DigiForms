@@ -1,7 +1,6 @@
 "use client";
 import * as React from "react";
-import { classes, FieldLayout, Choice, noticeTitles } from "./shared";
-import type { Native, Content, Element, Field, WithRef, Variant, ChoiceProps, Crumb, NoticeType, TabItem } from "./shared";
+import type { Element, TabItem } from "./shared";
 
 export function Tabs({ id, label, items }: { id: string; label: string; items: readonly TabItem[] }): Element | null {
   const [chosen, setChosen] = React.useState(items[0]?.key);

@@ -23,6 +23,7 @@ test1-output.json (reference example) ────┘
 | `testN-input.txt` | Python script that generated the OCR JSON (PP-OCRv6, `lang="en"`, CPU). Read-only context; re-run it for a new PDF. Do not edit it. | context |
 | `guidelines.json` | JSON Schema (draft 2020-12) of `FormDefinition`. | structure |
 | `GuideLines.md` | Rules for fields pre-filled from external registries ("dane inicjalne"). | pre-fill rules |
+| `Hacknation - Słowniki  (1).docx` | Available predefined dictionaries, their scope and permitted controls. The rules are reproduced in §13. | dictionary selection |
 | `test1-output.json` | Reference output for `test1`. Shows the house conventions the schema does not capture. | conventions |
 
 Naming: `testN-input.json` → `testN-output.json`, written next to the inputs. Output is UTF-8,
@@ -121,7 +122,7 @@ Number of links = number of tabs − 1. All ids are fresh UUID v4.
 
 ### Field types seen in the reference
 
-`SECTION`, `TEXT_FIELD`, `RADIO` (needs `options`), `SELECT` (needs `dictionaryName`, `defaultValue` as an array),
+`SECTION`, `TEXT_FIELD`, `RADIO` (explicit options or a permitted dictionary), `SELECT` (dictionary binding under §13),
 `FILE_UPLOADER`, `TEXT_BLOCK` (HTML in `description`), `CONSENT_SECTION` (needs `consentSectionConfig`).
 
 ### Choose the most specific field type
@@ -135,7 +136,7 @@ Apply the value-source decision from §4 before selecting the control.
 |---|---|
 | A numerical quantity, measurement, amount, percentage, count, or numerical year | Use the supported numeric type. Use the integer subtype when the answer must be whole and the platform supports it. Allow decimals for measurements or amounts that can be fractional. |
 | A complete calendar date explicitly requested as an answer | Use the supported date type. A numerical year or a month without a day does not by itself justify a full date control. |
-| A fixed choice or dictionary entry | Use the choice rules in §2. For a single choice listed in the document, use `RADIO` with all options. Use `SELECT` for a supported dictionary or a supported static list. |
+| A fixed choice or dictionary entry | Check §13 for a matching dictionary and its permitted controls. For a static list, use the selection rules in §2 and preserve every allowed option. |
 | A textual identifier or a formatted code | Use `TEXT_FIELD` for values such as PESEL, NIP, postal codes, phone numbers, parcel numbers, and house numbers. Preserve leading zeros, letters, and separators. |
 | Another semantically specific answer | Use a more specific type, such as time or e-mail, when both the form's intent and the platform's support for that type are established. |
 | Free text or ambiguous input | Use `TEXT_FIELD`. When the intended type is unclear, report the field for review. |
@@ -283,7 +284,7 @@ reference differ, prefer the OCR heading and flag it.
    `repeatingSectionGrid`. **Use `repeatingSectionGrid`** (matches the reference) and flag it.
 2. **Fields outside the schema** that the reference uses: `minItemRows`, `multiLevelTree`, `searchEnabled`. Keep them
    where the reference does; the schema doesn't forbid extra properties.
-3. **Schema says `defaultValue` is a string**, but `SELECT` fields in the reference use arrays (`[]`, `["Polska"]`). Keep arrays for `SELECT`.
+3. The reference uses arrays (`[]`, `["Polska"]`) for literal `SELECT` defaults. For a confirmed external pre-fill, use the string reference and `EXTERNAL_SYSTEM` pair in §4.
 4. **readOnly vs. the PDF:** the PDF requires registry-fed fields to be read-only, yet in the reference the MLPZ address,
    phone and e-mail fields are editable (only name/surname are read-only). Default: follow the reference for the standard blocks;
    for any **new** registry-fed field follow the PDF (`readOnly: true`). Ask the owner if unsure.
@@ -302,7 +303,8 @@ reference differ, prefer the OCR heading and flag it.
 3. Resolve value sources across the whole form and every branch (§4). Record confirmed external mappings first,
    then applicable defaults and remaining manual inputs.
 4. Build tabs from §5 + §6. Choose the most specific field types (§3) and serialize the resolved value sources (§4).
-   Generate UUIDs, compute grid positions and order, and derive unique `techName`s (§3).
+   Match choice fields against §13 and bind applicable dictionaries using the target configuration. Generate UUIDs,
+   compute grid positions and order, and derive unique `techName`s (§3).
 5. Add visibility, validators, and dependencies (§3, §11, §12) using the resolved source and answer format of each
    field. Build `flow.links`.
 6. Review the submission paths in §12, check §9 and run the deterministic validator in §10 on the draft.
@@ -320,6 +322,8 @@ reference differ, prefer the OCR heading and flag it.
   Every `"EXTERNAL_SYSTEM"` field must have exactly one allowed reference as its string `defaultValue` (§4, §10).
 - Check that every explicit or implied choice has a matching control with all confirmed options, including
   choices written only in prose (§2). Report any unresolved choice or missing option.
+- For each dictionary binding, verify scope, permitted control, selection count, technical ID and compatibility
+  with any pre-fill or default (§13).
 - Review each manual input for a confirmed automatic source belonging to the correct person or entity (§4).
 - Verify validator scope, requiredness, relationship checks, and conditional uploads across active branches (§3, §11, §12).
 - Review each `TEXT_FIELD` before publication. If the field's meaning and the available controls establish
@@ -521,3 +525,43 @@ controllers, branch switches, missing conditional attachments, boundary values, 
 applicable. Verify that supported rules can block invalid submission, that valid active paths can complete, and
 that required data can actually be entered, retrieved, selected or uploaded. Record unresolved requirements and
 any constraints that still need runtime support or confirmation.
+
+## 13. Predefined eUsługi dictionaries
+
+After the pre-fill pass (§4), check each field against the catalog below. A dictionary supplies the allowed
+answers. The user's selection or an authorized pre-fill supplies the answer. Bind a dictionary when its scope,
+granularity and selection rules match the field. Preserve narrower option sets specified by the source.
+
+| Dictionary from the specification | When to use it | Permitted control |
+|---|---|---|
+| Województwo | A Polish address asks for a voivodeship. | Dropdown (`SELECT`) only |
+| Powiat | A Polish address asks for a county. | Dropdown (`SELECT`) only |
+| Gmina | A Polish address asks for a municipality. | Dropdown (`SELECT`) only |
+| Miejscowość | A Polish address asks for a locality. Check that the field accepts localities within the dictionary's scope. | Dropdown (`SELECT`) only |
+| Kraje | The answer identifies a country, including country of birth, citizenship when expressed as a country, residence or an address abroad. | Dropdown (`SELECT`) only |
+| Numery kierunkowe | The answer identifies the international calling prefix for a telephone number. Bind the dictionary to the prefix component. Preserve a complete number supplied by an external source unless the platform supports mapping its components. | Dropdown, radio or checkbox as supported by the configuration. A single phone number takes one prefix. |
+
+**Binding.** Set `field.dictionaryName` to the exact technical identifier from the target configuration.
+The reference confirms `Kraje` for countries and shows `TERYT_DOWODOWY` and `TERYT_4G_DOWODOWY` in specific
+address blocks. For territorial data, verify which levels the configured dictionary returns, whether it uses
+a hierarchy or separate controls, and which values it stores. Reuse the confirmed configuration only for a
+matching field. Use a territorial hierarchy only in the Polish branch of an address. If separate controls
+depend on a parent selection, scope the child entries to the selected parent and recheck them when it changes.
+
+The catalog labels above identify the dictionaries by meaning. Where a technical identifier is missing,
+report the field and the dictionary to bind in the review. Use only verified identifiers in the JSON.
+Keep the human-readable field title separate from the binding. Restrict dictionary bindings to dropdowns,
+radio buttons and checkboxes, subject to the narrower restrictions in the table. Select one or multiple
+entries only as the form requires and the control supports. Use the target's confirmed configuration for
+multiplicity and its exact field type token for a checkbox.
+
+**Values.** Let the platform load entries from the bound dictionary. Keep `options: []` where the field
+shape requires the array and the dictionary supplies the entries. Store the selected entry in the platform's
+expected representation. Check that any initial value, condition or validator uses the same code or label.
+A dictionary binding alone does not select a default. For external pre-fill, retain the §4 reference pair and
+verify that the resolved value maps unambiguously to an entry through a supported mapping. Report incompatible
+mappings for review. For an ordinary dictionary default on a `SELECT`, use the array convention in §7.
+
+**Optional extensions.** When a recurring closed set has no applicable predefined dictionary, the review may
+propose a new one. Give its name, item structure (stored identifier, display label and any necessary parent
+link), and the fields where it would be used. Bind it in a form only once its technical configuration is confirmed.

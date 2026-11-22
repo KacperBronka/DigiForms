@@ -36,7 +36,7 @@ MODEL = "amazon/anthropic.claude-haiku-5-5@eu"
 # MODEL = "azure/mistral-large-3@eu"
 
 MAX_OCR_CHARS = 160_000
-MAX_IMAGE_PAGES = 1          # Only first four pages; set to 0 for OCR-only
+MAX_IMAGE_PAGES = 5          # Only first four pages; set to 0 for OCR-only
 IMAGE_DPI = 150             # Raise to 200 if tiny controls are missed
 JPEG_QUALITY = 78
 USE_CACHED_OCR = True        # Cache is linked to document content hash
@@ -219,7 +219,7 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
         "temperature": 0,
         "stream": True,
         "stream_options": {"include_usage": True},
-        "max_tokens": 32768,
+        "max_tokens": 65536,
     }
     print(f"Wysyłam JEDNO żądanie: {MODEL}; obrazy: {len(page_images)}")
 
