@@ -299,7 +299,8 @@ reference differ, prefer the OCR heading and flag it.
 
 1. Read `testN-input.json`; rebuild lines in reading order (§2). Note low-confidence lines.
 2. Extract the title, addressee, explicit and implied inputs, choices, and requirements from the source and
-   approved rules (§2, §12). Capture each choice’s full option set and selection rules.
+   approved rules (§2, §12). Capture each choice’s full option set and selection rules. For each attachment,
+   identify the document, who supplies it, when it applies, and whether it is required or optional.
 3. Resolve value sources across the whole form and every branch (§4). Record confirmed external mappings first,
    then applicable defaults and remaining manual inputs.
 4. Build tabs from §5 + §6. Choose the most specific field types (§3) and serialize the resolved value sources (§4).
@@ -481,13 +482,33 @@ reliable confirmed value source or an approved way to continue when the value is
   known set. Verify that the source covers the correct scope and returns the expected values. If the set is
   closed but its entries are missing, report the missing source and keep the membership constraint unresolved.
   Use free text where unrestricted input is permitted.
-- Turn every applicable requirement to submit evidence into a file input when the form calls for an upload.
-  Match its visibility and requiredness to the triggering condition and preserve any allowed alternatives.
-  If the requirement can instead be fulfilled through a declaration or a confirmed linked service, use the
-  mechanism supported for that requirement. Instructions shown to the user still need an actionable path.
 - For eligibility, enforce only what the form can verify using values, evidence, or declarations called for by
   the source or an approved process rule. A name or a syntactically valid identifier cannot establish eligibility
   by itself. Report any eligibility condition that remains unverified with the available evidence.
+
+### Recognize attachments in paper forms
+
+Read each document mention with its verb, heading, and footnotes. A paper form can ask for an attachment
+without a printed input or the word “upload”. A heading such as `Do wniosku załączam` can govern a list
+across several OCR lines. Carry its meaning and any qualifications through to each listed item.
+
+| Source wording | Digital form |
+|---|---|
+| `Do wniosku należy dołączyć kopię mapy` | Add a `FILE_UPLOADER` titled `Kopia mapy` with `REQUIRED`. |
+| `Jeżeli wniosek składa pełnomocnik, dołącza pełnomocnictwo` | Show and require the upload only in the proxy branch. |
+| `Można dołączyć zdjęcia` | Offer an optional upload. An empty upload must pass validation. |
+| `Podaj numer decyzji` or `Dokument należy okazać do wglądu` | Collect the requested number or display the instruction. Neither phrase asks the applicant to submit a copy. |
+
+Create one clearly labelled upload for each independently requested document. Reuse an existing upload
+when it covers the same document, person and condition. If either of two documents suffices, accept either
+one. Where a declaration, registry lookup or separate delivery channel is expressly allowed, preserve that
+path and require a file only on a path that calls for one. If the submission method is ambiguous, flag the
+source passage for review.
+
+Before finalizing, trace each attachment in the source to its upload, permitted alternative or review item,
+and each generated upload back to a source requirement or approved rule. Check that a missing required file
+blocks only the applicable branch. A checkbox confirming an attachment or a list of document names alone
+cannot fulfill a requirement to submit the file.
 
 ### Enforce value bounds and relationships
 
