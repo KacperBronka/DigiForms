@@ -15,8 +15,6 @@ services:
     environment:
       DOCUMENT_PROCESSOR_URL: "http://app:3000/upload"
       DOCUMENT_PROCESSOR_TOKEN: "${DOCUMENT_PROCESSOR_TOKEN:-}"
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-}"
-      BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:3000}"
     depends_on:
       - app
 

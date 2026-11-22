@@ -15,7 +15,6 @@
   "version": 1,
   "framework": "react",
   "chosenAddOns": [
-    "nitro",
-    "better-auth"
+    "nitro"
   ]
 }

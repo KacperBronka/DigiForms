@@ -45,41 +45,6 @@ The build output is a self-contained Node server. To deploy, push the `.output/`
 For host-specific presets (Vercel, Netlify, Cloudflare, AWS Lambda, etc.) and tuning, see https://v3.nitro.build/deploy.
 
 
-## Setting up Better Auth
-
-1. Generate and set the `BETTER_AUTH_SECRET` environment variable in your `.env.local`:
-
-   ```bash
-   npx -y @better-auth/cli secret
-   ```
-
-2. Visit the [Better Auth documentation](https://www.better-auth.com) to unlock the full potential of authentication in your app.
-
-### Adding a Database (Optional)
-
-Better Auth can work in stateless mode, but to persist user data, add a database:
-
-```typescript
-// src/lib/auth.ts
-import { betterAuth } from "better-auth";
-import { Pool } from "pg";
-
-export const auth = betterAuth({
-  database: new Pool({
-    connectionString: process.env.DATABASE_URL,
-  }),
-  // ... rest of config
-});
-```
-
-Then run migrations:
-
-```bash
-npx -y @better-auth/cli migrate
-```
-
-
-
 ## Routing
 
 This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
@@ -259,10 +224,10 @@ Pliki PDF, DOC, DOCX, ODS, XLSX, JPG i PNG mogą mieć do 20 MB. Po przetworzeni
 
 ## Running with Docker Compose
 
-From the repository root, set `EDENAI_API_KEY` and `BETTER_AUTH_SECRET` in your environment or a root `.env` file, then run:
+From the repository root, set `EDENAI_API_KEY` in your environment or a root `.env` file, then run:
 
 ```bash
 docker compose up --build
 ```
 
-The frontend is available at http://localhost:3000. Compose connects its server to the parser at `http://app:3000/upload`; the parser is also available on host port 3001. Set `BETTER_AUTH_URL` to the public frontend URL when deploying somewhere other than localhost. `DOCUMENT_PROCESSOR_TOKEN` is optional.
+The frontend is available at http://localhost:3000. Compose connects its server to the parser at `http://app:3000/upload`; the parser is also available on host port 3001. `DOCUMENT_PROCESSOR_TOKEN` is optional.

@@ -4,6 +4,9 @@ from contextlib import contextmanager
 from threading import Event
 from types import SimpleNamespace
 import unittest
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from httpx import ASGITransport, AsyncClient
@@ -103,6 +106,41 @@ class UploadTests(unittest.IsolatedAsyncioTestCase):
             release.set()
         self.assertEqual((await asyncio.wait_for(pending, timeout=5)).status_code, 200)
 
+
+
+class EdenStreamTests(unittest.TestCase):
+    def run_stream(self, lines, content_type="text/event-stream", body=""):
+        response = Mock(ok=True, headers={"Content-Type": content_type}, text=body)
+        response.iter_lines.return_value = iter(lines)
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        with TemporaryDirectory() as tmp, patch.object(main, "API_KEY", "test"), \
+             patch.object(main, "read_guidelines", return_value=("", "", {})), \
+             patch.object(main, "pdf_to_images", return_value=[]), \
+             patch.object(main.requests, "post", return_value=response):
+            return main.stream_eden_ai({}, Path("form.pdf"), Path(tmp))
+
+    def test_stream_content(self):
+        event = {"choices": [{"delta": {"content": '{"title":"Wniosek"}'}}]}
+        self.assertEqual(self.run_stream(["data: " + json.dumps(event), "", "data: [DONE]"]),
+                         {"title": "Wniosek"})
+
+    def test_empty_stream_reports_finish_reason(self):
+        with self.assertRaisesRegex(ValueError, "content_filter"):
+            self.run_stream(['data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}',
+                             '', 'data: [DONE]'])
+
+    def test_stream_error_event(self):
+        with self.assertRaisesRegex(RuntimeError, "provider unavailable"):
+            self.run_stream(['event: error', 'data: {"message":"provider unavailable"}'])
+
+    def test_non_stream_response_reports_body(self):
+        with self.assertRaisesRegex(RuntimeError, "invalid model"):
+            self.run_stream([], "application/json", '{"error":"invalid model"}')
+
+    def test_malformed_event_is_not_silently_discarded(self):
+        with self.assertRaisesRegex(RuntimeError, "JSON"):
+            self.run_stream(['data: not-json'])
 
 
 if __name__ == "__main__":

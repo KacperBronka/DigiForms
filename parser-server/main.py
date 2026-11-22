@@ -32,10 +32,11 @@ ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(ENV_PATH)
 # An empty inherited variable otherwise masks the value in .env.
 API_KEY = os.environ.get("EDENAI_API_KEY") or dotenv_values(ENV_PATH).get("EDENAI_API_KEY") or ""
-MODEL = "claude-haiku-5.5"
+MODEL = "amazon/anthropic.claude-haiku-5-5@eu"
+# MODEL = "azure/mistral-large-3@eu"
 
 MAX_OCR_CHARS = 160_000
-MAX_IMAGE_PAGES = 4          # Only first four pages; set to 0 for OCR-only
+MAX_IMAGE_PAGES = 1          # Only first four pages; set to 0 for OCR-only
 IMAGE_DPI = 150             # Raise to 200 if tiny controls are missed
 JPEG_QUALITY = 78
 USE_CACHED_OCR = True        # Cache is linked to document content hash
@@ -218,12 +219,15 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
         "temperature": 0,
         "stream": True,
         "stream_options": {"include_usage": True},
+        "max_tokens": 32768,
     }
     print(f"Wysyłam JEDNO żądanie: {MODEL}; obrazy: {len(page_images)}")
 
     chunks = []
     last_usage = None
     saw_done = False
+    finish_reasons = []
+    event_count = 0
     start = time.monotonic()
     # Write all arrived chunks immediately; never overwrite an earlier result silently.
     if partial_file.exists():
@@ -248,12 +252,24 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
                     f"Eden AI HTTP {response.status_code}: {response.text[:700]}"
                 )
 
+            content_type = response.headers.get("Content-Type", "").lower()
+            if content_type and "text/event-stream" not in content_type:
+                raise RuntimeError(
+                    f"Eden AI zwrócił nieoczekiwany Content-Type: {content_type}; "
+                    f"odpowiedź: {response.text[:700]}"
+                )
+
             with partial_file.open("w", encoding="utf-8") as output:
+                event_type = None
                 for line in response.iter_lines(decode_unicode=True):
                     if not line:
+                        event_type = None
                         continue
                     if isinstance(line, bytes):
                         line = line.decode("utf-8", errors="replace")
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                        continue
                     if not line.startswith("data:"):
                         continue
                     item = line[5:].strip()
@@ -262,13 +278,18 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
                         break
                     try:
                         event = json.loads(item)
-                    except json.JSONDecodeError:
-                        continue
-                    if "error" in event:
-                        raise RuntimeError(f"Eden AI streaming error: {event['error']}")
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError("Eden AI zwrócił niepoprawne zdarzenie SSE (JSON).") from exc
+                    if not isinstance(event, dict):
+                        raise RuntimeError("Eden AI zwrócił nieoczekiwany format zdarzenia SSE.")
+                    event_count += 1
+                    if "error" in event or event_type == "error":
+                        raise RuntimeError(f"Eden AI streaming error: {event.get('error', event)}")
                     if event.get("usage") is not None:
                         last_usage = event["usage"]
                     for choice in event.get("choices", []):
+                        if choice.get("finish_reason") is not None:
+                            finish_reasons.append(choice["finish_reason"])
                         fragment = choice.get("delta", {}).get("content")
                         if isinstance(fragment, str):
                             chunks.append(fragment)
@@ -285,7 +306,11 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
 
     content = "".join(chunks)
     if not content:
-        raise ValueError(f"Nie otrzymano treści modelu. Sprawdź {partial_file.name}.")
+        raise ValueError(
+            "Nie otrzymano treści modelu od Eden AI "
+            f"(zdarzenia: {event_count}, [DONE]: {saw_done}, "
+            f"finish_reason: {finish_reasons or 'brak'})."
+        )
     raw_file.write_text(content, encoding="utf-8")
     print(f"\nCzas: {time.monotonic() - start:.1f} s; zapisano: {raw_file.name}")
     if last_usage is not None:
