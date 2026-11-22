@@ -218,16 +218,155 @@ Komponent udostępnia wybrany plik przez `onChange`; walidację i przesyłanie n
 
 ## Przetwarzanie dokumentów i edycja formularza
 
-Domyślny adres serwera przetwarzającego to `http://localhost:3001`. Aby użyć innego adresu, ustaw po stronie serwera `DOCUMENT_PROCESSOR_URL` na pełny adres endpointu. Opcjonalnie ustaw `DOCUMENT_PROCESSOR_TOKEN`, aby dodać nagłówek `Authorization: Bearer …`. Aplikacja wysyła plik żądaniem `POST` jako `multipart/form-data` pod kluczem `file` i oczekuje bezpośrednio definicji formularza JSON w odpowiedzi. Rzeczywisty kontrakt serwera może wymagać dostosowania funkcji `processDocument` w `src/routes/api/process-document.ts`. Dane konfiguracyjne nie są udostępniane przeglądarce.
+Domyślny adres serwera przetwarzającego to `http://localhost:3001/upload`. Aby użyć innego adresu, ustaw po stronie serwera `DOCUMENT_PROCESSOR_URL` na pełny adres endpointu. Opcjonalnie ustaw `DOCUMENT_PROCESSOR_TOKEN`, aby dodać nagłówek `Authorization: Bearer …`. Aplikacja wysyła plik żądaniem `POST` jako `multipart/form-data` pod kluczem `file` i oczekuje bezpośrednio definicji formularza JSON w odpowiedzi. Rzeczywisty kontrakt serwera może wymagać dostosowania funkcji `processDocument` w `src/routes/api/process-document.ts`. Dane konfiguracyjne nie są udostępniane przeglądarce.
 
 Pliki PDF, DOC, DOCX, ODS, XLSX, JPG i PNG mogą mieć do 20 MB. Po przetworzeniu użytkownik edytuje wynik i zatwierdza go przed podglądem końcowym i pobraniem JSON-a. Wersja robocza jest przechowywana w `sessionStorage` bieżącej karty; niezastosowane zmiany w polu zaawansowanego JSON-a trzeba zastosować przed opuszczeniem edytora. Lokalne pliki JSON nadal otwierają się bezpośrednio w podglądzie.
 
-## Running with Docker Compose
+## Uruchamianie przez Docker Compose
 
-From the repository root, set `EDENAI_API_KEY` in your environment or a root `.env` file, then run:
+Z katalogu głównego repozytorium:
 
 ```bash
-docker compose up --build
+cp .env.example .env
+chmod 600 .env
+# Uzupełnij EDENAI_API_KEY w .env swoim kluczem.
+docker compose up --build -d
 ```
 
-The frontend is available at http://localhost:3000. Compose connects its server to the parser at `http://app:3000/upload`; the parser is also available on host port 3001. `DOCUMENT_PROCESSOR_TOKEN` is optional.
+Klucz jest wymagany przy uruchamianiu Compose. Można go też dostarczyć przez
+zmienną środowiskową `EDENAI_API_KEY` z systemu wdrożeniowego. `.env` nie jest
+kopiowany do obrazu. Nie przekazuj sekretów przez `ARG`, `ENV` w Dockerfile
+ani pliki źródłowe. Nie publikuj wyniku `docker compose config` / `docker inspect`,
+ponieważ środowisko uruchomionego kontenera zawiera klucz; do sprawdzania
+konfiguracji używaj `docker compose config --quiet`.
+
+Aplikacja jest dostępna pod http://localhost:3000. Domyślnie jedynym portem
+hosta jest `127.0.0.1:3000`; `APP_PORT` i `BIND_ADDRESS` pozwalają zmienić
+wiązanie. Ustawienie `BIND_ADDRESS=0.0.0.0` udostępnia aplikację w sieci.
+Publiczne wdrożenie powinno kończyć HTTPS na zewnętrznym reverse proxy.
+Parser nie publikuje portu hosta i nie jest udostępniany przez ścieżkę `/api/`.
+Frontend komunikuje się z nim pod `http://app:3000/upload` po wewnętrznej sieci.
+`DOCUMENT_PROCESSOR_TOKEN` jest opcjonalnym tokenem integracyjnym; zasady
+przekazywania i weryfikacji JWT opisano poniżej.
+
+Konfiguracja używa oficjalnych obrazów z konkretnymi wersjami:
+
+- `node:22.23.5-alpine3.23` — wieloetapowy build, w obrazie runtime tylko `.output`;
+- `python:3.13.18-slim-bookworm` — Debian Slim dla zgodności bibliotek OCR z glibc;
+- `nginx:1.30.7-alpine3.24` — proxy uruchamiane jako użytkownik `nginx`.
+
+Wersje pochodzą z katalogu Docker Official Images:
+[Node](https://github.com/docker-library/official-images/blob/master/library/node),
+[Python](https://github.com/docker-library/official-images/blob/master/library/python),
+[Nginx](https://github.com/docker-library/official-images/blob/master/library/nginx).
+Aktualizacje wersji obrazów należy wprowadzać jawnie i weryfikować ponownym buildem.
+
+Wszystkie usługi działają bez roota, z systemem plików tylko do odczytu,
+bez capabilities i z `no-new-privileges`. Konteksty budowania mają listy
+wymaganych plików; sekrety, lokalne dane i cache nie trafiają do obrazów.
+Zapisy są dozwolone tylko w `tmpfs`. `PARSER_TMP_SIZE` (domyślnie `1g`)
+określa miejsce na przetwarzane dokumenty, a `OCR_CACHE_SIZE` (domyślnie `2g`)
+na katalog domowy parsera, modele OCR i ustawienia LibreOffice. Dopasuj je
+do dostępnej pamięci i liczby równoległych żądań. Cache modeli jest nietrwały:
+pierwszy start i ponowne uruchomienie kontenera mogą wymagać pobrania modeli.
+Parser ma dostęp do Internetu dla modeli i Eden AI; frontend działa w sieciach
+wewnętrznych, a proxy ma osobną sieć wejściową. Limity procesów i rotacja logów
+są ustawione w Compose. Logi nie służą do przechowywania plików użytkownika.
+
+Healthcheck parsera czeka na gotowość OCR; frontend i proxy uruchamiają się
+po gotowości zależnych usług. Kontrola po wdrożeniu:
+
+```bash
+docker compose config --quiet
+docker compose ps
+docker compose exec proxy nginx -t
+docker compose exec app id
+docker compose exec front-server id
+docker compose exec proxy id
+```
+
+### Walidacja przesyłanych plików
+
+Parametr środowiskowy `MAX_UPLOAD_BYTES` określa maksymalny rozmiar pojedynczego
+pliku w bajtach (domyślnie `20971520`, czyli 20 MiB). Musi być dodatnią liczbą
+całkowitą. Compose przekazuje tę samą wartość do frontendu i parsera; przy
+osobnym uruchamianiu ustaw ją w obu procesach. Przeglądarka pobiera limit z
+`GET /api/process-document`; limit obejmuje też import JSON.
+
+Nazwa pliku może mieć maksymalnie 250 znaków i nie może zawierać
+`; : > < / \ | ' * % $`. Akceptowane dokumenty: PDF, DOC, DOCX, ODS, XLSX,
+JPG/JPEG i PNG. JSON jest odczytywany lokalnie i sprawdzany przez parser JSON.
+Deklarowany MIME musi odpowiadać rozszerzeniu. Brak MIME lub ogólny
+`application/octet-stream` jest dopuszczalny, ponieważ parser niezależnie
+sprawdza zawartość: PDF, format obrazu, strumienie Word w kontenerze OLE oraz
+wewnętrzny typ dokumentu w archiwach Office/ODS. Sama zmiana rozszerzenia lub
+nagłówka MIME nie wystarcza do zaakceptowania dokumentu.
+
+Oryginalne dokumenty, wyniki OCR i pliki konwersji są przetwarzane w pamięci
+lub katalogach tymczasowych ograniczonych do żądania. Są usuwane także po błędzie;
+przesłany strumień jest zamykany. Proxy nie buforuje całego żądania na dysku.
+Wygenerowana definicja formularza i lokalnie otwarta definicja JSON nadal są
+przechowywane w `sessionStorage` na potrzeby edycji formularza.
+
+### Parametry uruchomieniowe
+
+Wzorzec konfiguracji znajduje się w głównym `.env.example`. Compose przekazuje
+parametry do właściwych usług w runtime. Po zmianie ustawień odtwórz kontenery
+(`docker compose up -d`). Poza Dockerem ustaw zmienne środowiskowe procesów;
+parser obsługuje też lokalny `parser-server/.env`. Jawnie ustawione zmienne
+środowiskowe mają pierwszeństwo, również gdy są puste.
+
+| Parametr | Domyślnie | Znaczenie |
+| --- | --- | --- |
+| `MAX_UPLOAD_BYTES` | `20971520` | Dodatni limit pliku w bajtach, wspólny dla frontendu i parsera |
+| `JWT_ENABLED` | `false` | Włączenie weryfikacji JWT dla przetwarzania dokumentów |
+| `JWT_ALGORITHM` | `RS256` | Dozwolone `RS256` lub `ES256`; algorytm określa konfiguracja, nie token |
+| `JWT_PUBLIC_KEY` | puste | Klucz publiczny PEM; wymagany przy włączonym JWT, obsługuje literalne `\n` |
+| `JWT_ISSUER` | puste | Dokładny oczekiwany wystawca `iss`, wymagany przy JWT |
+| `JWT_AUDIENCE` | puste | Oczekiwany odbiorca `aud`, wymagany przy JWT |
+| `JWT_LEEWAY_SECONDS` | `30` | Tolerancja czasu JWT, od 0 do 300 sekund |
+| `EDENAI_API_KEY` | brak | Sekret integracji; wymagany przez Compose |
+| `EDENAI_API_URL` | `https://api.edenai.run/v3/chat/completions` | Endpoint integracji Eden AI |
+| `EDENAI_MODEL` | `amazon/anthropic.claude-haiku-5-5@eu` | Identyfikator modelu |
+| `EDENAI_CONNECT_TIMEOUT_SECONDS` | `15` | Dodatni timeout połączenia |
+| `EDENAI_READ_TIMEOUT_SECONDS` | `600` | Dodatni timeout oczekiwania na kolejne dane strumienia, nie całego zadania |
+| `DOCUMENT_PROCESSOR_URL` | `http://app:3000/upload` w Compose | Endpoint parsera; poza Compose domyślnie `http://localhost:3001/upload` |
+| `DOCUMENT_PROCESSOR_TOKEN` | puste | Opcjonalny token usługowy, wyłącznie po stronie serwera |
+| `DOCUMENT_PROCESSOR_TIMEOUT_SECONDS` | `900` | Czas oczekiwania frontendu na parser, od 1 do 2147483 sekund |
+| `OCR_LANG` / `OCR_VERSION` / `OCR_DEVICE` | `pl` / `PP-OCRv6` / `cpu` | Parametry PaddleOCR; wybrany model i urządzenie muszą być obsługiwane przez zainstalowane biblioteki |
+| `MAX_OCR_CHARS` | `160000` | Maksymalny rozmiar tekstu wejściowego modelu |
+| `MAX_IMAGE_PAGES` | `5` | Liczba stron przekazywanych jako obrazy; `0` wyłącza obrazy |
+| `IMAGE_DPI` / `JPEG_QUALITY` | `150` / `78` | Rozdzielczość 1–600 DPI i jakość JPEG 1–95 |
+| `PORT` | `3001` poza Compose | Port parsera 1–65535; w Compose porty wewnętrzne są stałe (`3000`) |
+
+Błędne ustawienia parsera przerywają start przed ładowaniem modeli OCR. Frontend
+sprawdza ustawienia podczas obsługi endpointu; niepoprawna konfiguracja integracji
+zwraca `503`. Healthcheck również wymaga poprawnych ustawień. Przeglądarka otrzymuje
+wyłącznie limit rozmiaru pliku, nigdy obiekt konfiguracji ani sekrety. Timeout
+frontendu zwraca `504`; przerwanie oczekiwania nie gwarantuje anulowania trwającego OCR.
+Zewnętrzny parser wymaga dodatkowo dostępu sieciowego — frontend w domyślnym
+Compose ma wyłącznie sieci wewnętrzne.
+
+### Włączenie JWT
+
+Ustaw `JWT_ENABLED=true`, `JWT_PUBLIC_KEY`, `JWT_ISSUER`, `JWT_AUDIENCE` oraz
+algorytm zgodny z kluczem wystawcy. RS256 wymaga klucza RSA co najmniej 2048 bitów,
+a ES256 klucza P-256. Klucz prywatny pozostaje u wystawcy tokenów.
+
+Domyślnie frontend przekazuje nagłówek `Authorization: Bearer <token>` klienta do
+parsera. Parser sprawdza token **przed odczytem przesłanego pliku**. Wymagane pola
+tokenu: `exp`, `iat`, `iss`, `aud`, `sub`; sprawdzane są podpis, wystawca, odbiorca
+i czas ważności, w tym `nbf`, jeśli występuje. Niepoprawny token zwraca `401`
+z nagłówkiem `WWW-Authenticate: Bearer`. Weryfikacja korzysta z
+[PyJWT](https://pyjwt.readthedocs.io/en/stable/api.html).
+
+Jeśli ustawisz `DOCUMENT_PROCESSOR_TOKEN`, frontend użyje go zamiast tokenu
+klienta. Jest to wariant uwierzytelniania **frontend–parser**, a nie logowanie
+użytkowników; wymaga osobnej ochrony dostępu do frontendu. Rotacja lub odnowienie
+tego tokenu należy do systemu wdrożeniowego.
+
+Aplikacja nie wystawia tokenów i nie zawiera ekranu logowania. Po włączeniu JWT
+wariant użytkownika wymaga klienta przekazującego nagłówek Authorization lub
+integracji logowania; obecny interfejs sam nie pobiera tokenów. `/health` i odczyt
+limitu pliku pozostają publiczne. JWT chroni API przetwarzania, nie lokalny
+podgląd formularzy ani import JSON w przeglądarce.

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, FileUpload, Loader } from '#/components/gov'
 import { isFormDefinition } from '#/lib/formDefinition'
-import { acceptedFileTypes, documentSizeError, isDocumentName, validDocumentSize } from '#/lib/documentUpload'
+import { acceptedFileTypes } from '#/lib/documentUpload'
+import { validateUpload } from '#/lib/uploadValidation'
 import { DRAFT_KEY, FORM_KEY, writeStored } from '#/lib/formDraft'
 
 export const Route = createFileRoute('/')({ component: Home })
@@ -49,17 +50,15 @@ function Home() {
       return
     }
     const jsonFile = /\.json$/i.test(file.name)
-    if (!jsonFile && !isDocumentName(file.name)) {
-      setError('Wybierz plik w jednym z dozwolonych formatów.')
-      return
-    }
-    if (!jsonFile && !validDocumentSize(file.size)) {
-      setError(documentSizeError)
-      return
-    }
     const current = selection.current
     setLoading(true)
     try {
+      const settingsResponse = await fetch('/api/process-document')
+      if (!settingsResponse.ok) throw new Error('Nie udało się odczytać limitu rozmiaru pliku.')
+      const { maxUploadBytes } = await settingsResponse.json()
+      if (!Number.isSafeInteger(maxUploadBytes) || maxUploadBytes <= 0) throw new Error('Niepoprawna konfiguracja limitu pliku.')
+      const validationError = validateUpload(file, maxUploadBytes, true)
+      if (validationError) throw new Error(validationError)
       let data: unknown
       if (jsonFile) {
         try { data = JSON.parse(await file.text()) } catch { throw new Error('Nie udało się odczytać pliku. Sprawdź, czy zawiera poprawny JSON.') }

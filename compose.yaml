@@ -1,29 +1,116 @@
+x-hardening: &hardening
+  init: true
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   app:
+    <<: *hardening
     build:
       context: ./parser-server
       dockerfile: Dockerfile
+    user: "10001:10001"
     environment:
-      EDENAI_API_KEY: "${EDENAI_API_KEY:-}"
-      PYTHONUNBUFFERED: "1"
+      EDENAI_API_KEY: "${EDENAI_API_KEY:?Set EDENAI_API_KEY at runtime}"
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
+      EDENAI_API_URL: "${EDENAI_API_URL:-https://api.edenai.run/v3/chat/completions}"
+      EDENAI_MODEL: "${EDENAI_MODEL:-amazon/anthropic.claude-haiku-5-5@eu}"
+      EDENAI_CONNECT_TIMEOUT_SECONDS: "${EDENAI_CONNECT_TIMEOUT_SECONDS:-15}"
+      EDENAI_READ_TIMEOUT_SECONDS: "${EDENAI_READ_TIMEOUT_SECONDS:-600}"
+      MAX_OCR_CHARS: "${MAX_OCR_CHARS:-160000}"
+      MAX_IMAGE_PAGES: "${MAX_IMAGE_PAGES:-5}"
+      IMAGE_DPI: "${IMAGE_DPI:-150}"
+      JPEG_QUALITY: "${JPEG_QUALITY:-78}"
+      OCR_LANG: "${OCR_LANG:-pl}"
+      OCR_VERSION: "${OCR_VERSION:-PP-OCRv6}"
+      OCR_DEVICE: "${OCR_DEVICE:-cpu}"
+      JWT_ENABLED: "${JWT_ENABLED:-false}"
+      JWT_PUBLIC_KEY: "${JWT_PUBLIC_KEY:-}"
+      JWT_ALGORITHM: "${JWT_ALGORITHM:-RS256}"
+      JWT_ISSUER: "${JWT_ISSUER:-}"
+      JWT_AUDIENCE: "${JWT_AUDIENCE:-}"
+      JWT_LEEWAY_SECONDS: "${JWT_LEEWAY_SECONDS:-30}"
       PORT: "3000"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${PARSER_TMP_SIZE:-1g},mode=1777
+      # OCR model caches and LibreOffice preferences; never persisted to a host volume.
+      - /home/app:rw,nosuid,nodev,size=${OCR_CACHE_SIZE:-2g},uid=10001,gid=10001,mode=0700
+    pids_limit: 512
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # First startup downloads OCR models; allow time for that initialization.
+      start_period: 10m
 
   front-server:
+    <<: *hardening
     build:
       context: ./front-server
       dockerfile: Dockerfile
+    user: "1000:1000"
     environment:
-      DOCUMENT_PROCESSOR_URL: "http://app:3000/upload"
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
+      DOCUMENT_PROCESSOR_URL: "${DOCUMENT_PROCESSOR_URL:-http://app:3000/upload}"
       DOCUMENT_PROCESSOR_TOKEN: "${DOCUMENT_PROCESSOR_TOKEN:-}"
+      DOCUMENT_PROCESSOR_TIMEOUT_SECONDS: "${DOCUMENT_PROCESSOR_TIMEOUT_SECONDS:-900}"
+      JWT_ENABLED: "${JWT_ENABLED:-false}"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    pids_limit: 128
+    networks:
+      - web
+      - backend
     depends_on:
-      - app
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/process-document').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   proxy:
-    image: nginx:alpine
+    <<: *hardening
+    image: nginx:1.30.7-alpine3.24
+    user: nginx
+    # Bypass image startup scripts that try to rewrite read-only configuration.
+    entrypoint: ["nginx"]
+    command: ["-g", "daemon off;"]
     ports:
-      - "3000:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     volumes:
+      - ./front-server/nginx-runtime.conf:/etc/nginx/nginx.conf:ro
       - ./front-server/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    pids_limit: 128
+    networks:
+      - web
+      - ingress
     depends_on:
-      - app
-      - front-server
+      front-server:
+        condition: service_healthy
+
+networks:
+  ingress:
+  web:
+    internal: true
+  backend:
+    internal: true
+  # Only the OCR parser requires Internet access (models and Eden AI).
+  egress:
