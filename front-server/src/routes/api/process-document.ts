@@ -14,7 +14,7 @@ export async function processDocument(request: Request): Promise<Response> {
     body.append('file', file, file.name)
     const headers = new Headers()
     if (process.env.DOCUMENT_PROCESSOR_TOKEN) headers.set('Authorization', `Bearer ${process.env.DOCUMENT_PROCESSOR_TOKEN}`)
-    const result = await fetch(endpoint, { method: 'POST', body, headers, signal: AbortSignal.timeout(120_000) })
+    const result = await fetch(endpoint, { method: 'POST', body, headers })
     if (!result.ok) return Response.json({ error: 'Serwer nie przetworzył dokumentu. Spróbuj ponownie.' }, { status: 502 })
     let data: unknown
     try { data = await result.json() } catch { return Response.json({ error: 'Serwer zwrócił niepoprawny JSON.' }, { status: 502 }) }

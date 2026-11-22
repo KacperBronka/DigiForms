@@ -4,7 +4,7 @@ import { Button, Checkbox, Notice, Select, Textarea, TextInput } from '../gov'
 
 type Item = Record<string, any> // Definitions can contain server-specific properties that must be retained.
 type Path = (string | number)[]
-const types = ['TEXT_FIELD', 'TEXTAREA', 'NUMBER', 'DATEPICKER', 'SELECT', 'RADIO', 'CHECKBOX', 'SECTION', 'REPEATING_SECTION', 'TEXT_BLOCK', 'INFO_SECTION', 'CONSENT_SECTION', 'FILE_UPLOADER']
+const types = ['TEXT_FIELD', 'TEXTAREA', 'NUMBER', 'DATE', 'DATEPICKER', 'TIME', 'SELECT', 'RADIO', 'CHECKBOX', 'SECTION', 'REPEATING_SECTION', 'TEXT_BLOCK', 'INFO_SECTION', 'CONSENT_SECTION', 'FILE_UPLOADER']
 
 export function setDefinitionValue<T>(definition: T, path: Path, value: unknown): T {
   const next = structuredClone(definition)

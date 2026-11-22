@@ -32,14 +32,13 @@ ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(ENV_PATH)
 # An empty inherited variable otherwise masks the value in .env.
 API_KEY = os.environ.get("EDENAI_API_KEY") or dotenv_values(ENV_PATH).get("EDENAI_API_KEY") or ""
-MODEL = "gemma-4-31b-it"
+MODEL = "claude-haiku-5.5"
 
 MAX_OCR_CHARS = 160_000
 MAX_IMAGE_PAGES = 4          # Only first four pages; set to 0 for OCR-only
 IMAGE_DPI = 150             # Raise to 200 if tiny controls are missed
 JPEG_QUALITY = 78
 USE_CACHED_OCR = True        # Cache is linked to document content hash
-READ_TIMEOUT_SECONDS = 180  # Time waiting for the next chunk, not whole response
 # ===================================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -242,7 +241,7 @@ def stream_eden_ai(ocr_data: dict, pdf_path: Path, workdir: Path):
             },
             json=payload,
             stream=True,
-            timeout=(15, READ_TIMEOUT_SECONDS),
+            timeout=(15, None),
         ) as response:
             if not response.ok:
                 raise RuntimeError(

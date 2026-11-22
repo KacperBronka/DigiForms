@@ -3,7 +3,8 @@ import jsonata from 'jsonata'
 import { getFakeUserValue } from '../../lib/fakeUser'
 import { getDictionary } from '../../lib/dictionaries'
 import { SafeDescription } from './SafeDescription'
-import { Button, Checkbox, Fieldset, FileUpload, Notice, Radio, Select, Textarea, TextInput } from '../gov'
+import { SearchableSelect } from './SearchableSelect'
+import { Button, Checkbox, Fieldset, FileUpload, Notice, Radio, Textarea, TextInput } from '../gov'
 
 type Option = { id?: string; name?: string; techName?: string }
 type Field = { id?: string; techName?: string; type?: string; title?: string; description?: string; tooltipMessage?: string; options?: Option[]; validation?: unknown; defaultValue?: string; defaultValueType?: string; readOnly?: boolean; dictionaryName?: string; states?: { type?: string; query?: string }[]; repetingSectionGrid?: Question[]; repeatingSectionGrid?: Question[]; consentSectionConfig?: { required?: boolean; consents?: { description?: string; required?: boolean }[] } }
@@ -70,7 +71,36 @@ export async function evaluateFieldState(states: Field['states'], context: unkno
   return { visible: results.filter(result => result.type === 'SHOW').every(result => result.result), readOnly: results.some(result => result.type === 'READ_ONLY' && result.result) }
 }
 
-function FieldView({ field, path, getContext, scope, answers, counts, addRepetition, repeatIndex = 0 }: { field: Field; path: string; getContext: (scope: RepeatScope) => unknown; scope: RepeatScope; answers: Answers; counts: Record<string, number>; addRepetition: (path: string) => void; repeatIndex?: number }) {
+// Evaluate descendants independently of rendering: a hidden section must still
+// be able to become visible when an answer changes.
+export async function sectionHasVisibleFields(field: Field, path: string, getContext: (scope: RepeatScope) => unknown, counts: Record<string, number>, scope: RepeatScope = {}, repeatIndex = 0): Promise<boolean> {
+  const children = field.repeatingSectionGrid ?? field.repetingSectionGrid ?? []
+  const repeating = field.type?.toUpperCase() === 'REPEATING_SECTION'
+  const count = repeating ? (counts[path] ?? 1) : 1
+  for (let index = 0; index < count; index++) {
+    const childScope = repeating ? { ...scope, [path]: index } : scope
+    const childRepeatIndex = repeating ? index : repeatIndex
+    for (const [i, question] of ordered(children).entries()) {
+      const child = question.field
+      if (!child) continue
+      try {
+        if (!(await evaluateFieldState(child.states, getContext(childScope), childRepeatIndex)).visible) continue
+      } catch {
+        // Keep the section mounted so FieldView can show its condition warning.
+        return true
+      }
+      const type = (child.type ?? '').toUpperCase()
+      if (type === 'SECTION' || type === 'REPEATING_SECTION') {
+        if (await sectionHasVisibleFields(child, `${path}-${index}-${i}`, getContext, counts, childScope, childRepeatIndex)) return true
+      } else if (type === 'CONSENT_SECTION') {
+        if (child.consentSectionConfig?.consents?.length) return true
+      } else if (type !== 'TEXT_BLOCK' && type !== 'INFO_SECTION') return true
+    }
+  }
+  return false
+}
+
+function FieldView({ field, path, getContext, scope, answers, counts, addRepetition, setAnswer, repeatIndex = 0 }: { field: Field; path: string; getContext: (scope: RepeatScope) => unknown; scope: RepeatScope; answers: Answers; counts: Record<string, number>; addRepetition: (path: string) => void; setAnswer: (path: string, value: string) => void; repeatIndex?: number }) {
   const context = getContext(scope)
   const type = (field.type ?? '').toUpperCase()
   const label = field.title || field.techName || 'Pole bez nazwy'
@@ -83,10 +113,11 @@ function FieldView({ field, path, getContext, scope, answers, counts, addRepetit
   const currentValue = answers[path] ?? (type === 'SELECT' ? selectDefault(field) : defaultValue)
   const configuredOptions = Array.isArray(field.options) ? field.options : []
   const options: Option[] = configuredOptions.length ? configuredOptions : getDictionary(field.dictionaryName) ?? []
-  const [search, setSearch] = useState('')
   const children = field.repeatingSectionGrid ?? field.repetingSectionGrid ?? []
   const states = Array.isArray(field.states) ? field.states : []
   const [dynamic, setDynamic] = useState<{ visible: boolean; readOnly: boolean; error?: boolean } | null>(states.length ? null : { visible: true, readOnly: false })
+  const isSection = type === 'SECTION' || type === 'REPEATING_SECTION'
+  const [sectionVisibility, setSectionVisibility] = useState(false)
   useEffect(() => {
     let active = true
     if (!states.length) { setDynamic({ visible: true, readOnly: false }); return }
@@ -95,26 +126,32 @@ function FieldView({ field, path, getContext, scope, answers, counts, addRepetit
       .catch(() => { if (active) setDynamic({ visible: false, readOnly: false, error: true }) })
     return () => { active = false }
   }, [context, field.states, repeatIndex])
+  useEffect(() => {
+    if (!isSection) return
+    let active = true
+    sectionHasVisibleFields(field, path, getContext, counts, scope, repeatIndex)
+      .then(visible => { if (active) setSectionVisibility(visible) })
+      .catch(() => { if (active) setSectionVisibility(true) })
+    return () => { active = false }
+  }, [context, field, path, getContext, counts, repeatIndex, isSection])
   if (!dynamic) return null
   if (dynamic.error) return <Notice kind="warning">Nie udało się obliczyć warunku dla pola „{label}”.</Notice>
   if (!dynamic.visible) return null
   const readOnly = Boolean(field.readOnly || dynamic.readOnly)
-  if (type === 'SECTION' || type === 'REPEATING_SECTION') return <section className="form-section"><h2>{label}</h2>{hint}{Array.from({ length: type === 'REPEATING_SECTION' ? (counts[path] ?? 1) : 1 }, (_, index) => <div key={index} className="generated-fields">{type === 'REPEATING_SECTION' && <h3>{label} {index + 1}</h3>}{ordered(children).map((question, i) => question.field && <FieldView key={`${path}-${index}-${i}`} path={`${path}-${index}-${i}`} field={question.field} getContext={getContext} scope={type === 'REPEATING_SECTION' ? { ...scope, [path]: index } : scope} answers={answers} counts={counts} addRepetition={addRepetition} repeatIndex={type === 'REPEATING_SECTION' ? index : repeatIndex} />)}</div>)}{type === 'REPEATING_SECTION' && <Button variant="secondary" onClick={() => addRepetition(path)}>Dodaj kolejną pozycję</Button>}</section>
+  if (isSection) return sectionVisibility ? <section className="form-section"><h2>{label}</h2>{hint}{Array.from({ length: type === 'REPEATING_SECTION' ? (counts[path] ?? 1) : 1 }, (_, index) => <div key={index} className="generated-fields">{type === 'REPEATING_SECTION' && <h3>{label} {index + 1}</h3>}{ordered(children).map((question, i) => question.field && <FieldView key={`${path}-${index}-${i}`} path={`${path}-${index}-${i}`} field={question.field} getContext={getContext} scope={type === 'REPEATING_SECTION' ? { ...scope, [path]: index } : scope} answers={answers} counts={counts} addRepetition={addRepetition} setAnswer={setAnswer} repeatIndex={type === 'REPEATING_SECTION' ? index : repeatIndex} />)}</div>)}{type === 'REPEATING_SECTION' && <Button variant="secondary" onClick={() => addRepetition(path)}>Dodaj kolejną pozycję</Button>}</section> : null
   if (type === 'TEXT_BLOCK' || type === 'INFO_SECTION') return <div className="form-text">{field.title && <h2>{field.title}</h2>}{hint}</div>
   if (type === 'CONSENT_SECTION') return <Fieldset legend={label}><div className="generated-choices">{hint}{field.consentSectionConfig?.consents?.map((consent, i) => <Checkbox key={i} id={`${path}-consent-${i}`} value="Tak" label={consent.description ? <SafeDescription html={consent.description} /> : `Zgoda ${i + 1}`} checked={answers[`${path}-consent-${i}`] === 'Tak'} onChange={() => {}} disabled={readOnly} required={consent.required ?? field.consentSectionConfig?.required} />)}</div></Fieldset>
-  if (external && type !== 'SELECT') return <TextInput id={path} label={label} hint={hint} type={type === 'DATEPICKER' ? 'date' : 'text'} required={required} readOnly value={getFakeUserValue(defaultValue) ?? ''} />
+  if (external && type !== 'SELECT') return <TextInput id={path} label={label} hint={hint} type={['DATE', 'DATEPICKER'].includes(type) ? 'date' : type === 'TIME' ? 'time' : 'text'} required={required} readOnly value={getFakeUserValue(defaultValue) ?? ''} />
   if (field.dictionaryName && options.length === 0) return <Notice kind="warning">Pole „{label}” wymaga słownika „{field.dictionaryName}”, który nie jest jeszcze podłączony.</Notice>
   if (type === 'RADIO' || type === 'CHECKBOX') return <Fieldset legend={`${label}${required ? ' (wymagane)' : ''}`}><div className="generated-choices">{hint}{options.length ? options.map((option, i) => type === 'RADIO' ? <Radio key={i} name={path} value={option.name || option.techName || String(i)} label={option.name || option.techName || `Opcja ${i + 1}`} required={required} disabled={readOnly} checked={currentValue === (option.name || option.techName || String(i))} onChange={() => {}} /> : <Checkbox key={i} name={path} value={option.name || option.techName || String(i)} label={option.name || option.techName || `Opcja ${i + 1}`} disabled={readOnly} checked={Array.isArray(currentValue) && currentValue.includes(option.name || option.techName || String(i))} onChange={() => {}} />) : <Notice kind="warning">Brak opcji do wyboru.</Notice>}</div></Fieldset>
   if (type === 'SELECT') {
     const value = typeof currentValue === 'string' ? currentValue : ''
-    const indexedOptions = options.map((option, index) => ({ option, value: option.name || option.techName || String(index) }))
-    const filtered = indexedOptions.filter(item => (item.option.name || item.option.techName || '').toLocaleLowerCase('pl').includes(search.toLocaleLowerCase('pl')) || item.value === value)
-    const missingValue = value && !indexedOptions.some(item => item.value === value)
-    return <div className="dictionary-select">{options.length > 15 && <TextInput id={`${path}-search`} label={`Wyszukaj: ${label}`} disabled={readOnly || external} value={search} onChange={event => { event.stopPropagation(); setSearch(event.target.value) }} />}<Select id={path} label={label} hint={hint} required={required} disabled={readOnly || external} value={value} onChange={() => {}}><option value="">Wybierz</option>{missingValue && <option value={value}>{value}</option>}{filtered.map(item => <option key={item.option.id || item.value} value={item.value}>{item.option.name || item.option.techName || item.value}</option>)}</Select></div>
+    const indexedOptions = [{ value: '', label: 'Wybierz' }, ...options.map((option, index) => ({ value: option.name || option.techName || String(index), label: option.name || option.techName || `Opcja ${index + 1}` }))]
+    return <SearchableSelect id={path} label={label} hint={hint} required={required} disabled={readOnly || external} value={value} options={indexedOptions} onChange={selected => setAnswer(path, selected)} />
   }
   if (type === 'TEXTAREA') return <Textarea id={path} label={label} hint={hint} required={required} readOnly={readOnly} value={typeof currentValue === 'string' ? currentValue : ''} onChange={() => {}} />
   if (type === 'FILE_UPLOADER') return <FileUpload id={path} label={label} hint={hint} required={required} disabled={readOnly} />
-  if (['TEXT_FIELD', 'NUMBER', 'DATEPICKER'].includes(type)) return <TextInput id={path} label={label} hint={hint} type={type === 'NUMBER' ? 'number' : type === 'DATEPICKER' ? 'date' : validations.includes('EMAIL') ? 'email' : 'text'} required={required} readOnly={readOnly} value={typeof currentValue === 'string' ? currentValue : ''} onChange={() => {}} />
+  if (['TEXT_FIELD', 'NUMBER', 'DATE', 'DATEPICKER', 'TIME'].includes(type)) return <TextInput id={path} label={label} hint={hint} type={type === 'NUMBER' ? 'number' : ['DATE', 'DATEPICKER'].includes(type) ? 'date' : type === 'TIME' ? 'time' : validations.includes('EMAIL') ? 'email' : 'text'} required={required} readOnly={readOnly} value={typeof currentValue === 'string' ? currentValue : ''} onChange={() => {}} />
   return <Notice kind="warning">Nieobsługiwany typ pola „{field.type || 'nieznany'}” ({label}).</Notice>
 }
 
@@ -149,7 +186,7 @@ function FormSummary({ definition, answers, getContext, counts }: { definition: 
             field.consentSectionConfig?.consents?.forEach((consent, i) => {
               if (answers[`${path}-consent-${i}`] === 'Tak') result.push({ section: label, label: consent.description || `Zgoda ${i + 1}`, value: 'Tak', html: Boolean(consent.description) })
             })
-          } else if (['TEXT_FIELD', 'TEXTAREA', 'NUMBER', 'DATEPICKER', 'SELECT', 'RADIO', 'CHECKBOX', 'FILE_UPLOADER'].includes(type)) {
+          } else if (['TEXT_FIELD', 'TEXTAREA', 'NUMBER', 'DATE', 'DATEPICKER', 'TIME', 'SELECT', 'RADIO', 'CHECKBOX', 'FILE_UPLOADER'].includes(type)) {
             const value = answers[path] ?? (type === 'SELECT' ? selectDefault(field) : field.defaultValueType === 'EXTERNAL_SYSTEM' ? getFakeUserValue(field.defaultValue) : field.defaultValue)
             const display = Array.isArray(value) ? value.join(', ') : value
             if (display && display.trim()) result.push({ section, label, value: display })
@@ -171,6 +208,7 @@ export function GeneratedForm({ definition }: { definition: Definition }) {
   const [page, setPage] = useState(0)
   const [answers, setAnswers] = useState<Answers>({})
   const [counts, setCounts] = useState<Record<string, number>>({})
+  const setAnswer = (path: string, value: string) => setAnswers(previous => ({ ...previous, [path]: value }))
   const addRepetition = (path: string) => setCounts(previous => ({ ...previous, [path]: (previous[path] ?? 1) + 1 }))
   const getContext = useMemo(() => {
     const contexts = new Map<string, ReturnType<typeof contextFor>>()
@@ -210,7 +248,7 @@ export function GeneratedForm({ definition }: { definition: Definition }) {
   const links = definition.flow?.links
   const complexFlow = Array.isArray(links) && links.some((link, i) => link.source !== tabs[i]?.id || link.target !== tabs[i + 1]?.id) || (Array.isArray(links) && links.length !== tabs.length - 1)
   return <div className="generated-form" onChange={handleChange}><h1>{definition.title}</h1><p className="form-progress">Krok {page + 1} z {tabs.length}</p>{complexFlow && <Notice kind="warning">Formularz zawiera niestandardowy przepływ stron. Podgląd pokazuje strony w kolejności z pliku; przejścia warunkowe nie są obsługiwane.</Notice>}
-    {tabs.map((tab, index) => <div key={tab.id || index} hidden={page !== index}><h2 className="form-page-title">{tab.title || `Krok ${index + 1}`}</h2><div className="generated-fields">{ordered(tab.questions).map((question, i) => question.field && <FieldView key={i} field={question.field} path={`field-${index}-${i}`} getContext={getContext} scope={{}} answers={answers} counts={counts} addRepetition={addRepetition} />)}</div></div>)}
+    {tabs.map((tab, index) => <div key={tab.id || index} hidden={page !== index}><h2 className="form-page-title">{tab.title || `Krok ${index + 1}`}</h2><div className="generated-fields">{ordered(tab.questions).map((question, i) => question.field && <FieldView key={i} field={question.field} path={`field-${index}-${i}`} getContext={getContext} scope={{}} answers={answers} counts={counts} addRepetition={addRepetition} setAnswer={setAnswer} />)}</div></div>)}
     {page === tabs.length - 1 && <FormSummary definition={definition} answers={answers} getContext={getContext} counts={counts} />}
     <nav className="form-actions" aria-label="Nawigacja formularza">{page > 0 && <Button variant="secondary" onClick={() => setPage(p => p - 1)}>Wstecz</Button>}{page < tabs.length - 1 && <Button onClick={() => setPage(p => p + 1)}>Dalej</Button>}</nav>
     <p className="form-disclaimer">To podgląd formularza. Dane pozostają w przeglądarce i nie są wysyłane do urzędu.</p>

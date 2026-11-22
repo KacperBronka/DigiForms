@@ -5,7 +5,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, ws: false }, optimizeDeps: { noDiscovery: true }, appType: 'custom' })
 try {
-  const { contextFor, evaluateCondition, evaluateFieldState, isFormDefinition, GeneratedForm } = await server.ssrLoadModule('/src/components/form/GeneratedForm.tsx')
+  const { contextFor, evaluateCondition, evaluateFieldState, sectionHasVisibleFields, isFormDefinition, GeneratedForm } = await server.ssrLoadModule('/src/components/form/GeneratedForm.tsx')
+  const { getDictionary } = await server.ssrLoadModule('/src/lib/dictionaries.ts')
+  const voivodeships = getDictionary(' TERYT_DOWODOWY ')
+  assert.equal(voivodeships.length, 16)
+  assert.deepEqual(voivodeships.find(option => option.name === 'mazowieckie'), { id: '14', name: 'mazowieckie' })
+  assert.equal(getDictionary('nieznany'), undefined)
   const query = `("Osoby prawnej lub jednostki organizacyjnej" in tabs['Dane' in title].questions['podmiot_wniosku' in field.techName].field.repeatingSectionGrid['wybierz_w_czyim_imieniu_wnioskujesz' in field.techName].field.__userAnswer)`
   const definition = { title: 'Wniosek', tabs: [{ title: 'Dane', questions: [{ field: { type: 'SECTION', techName: 'podmiot_wniosku', repeatingSectionGrid: [{ field: { type: 'RADIO', techName: 'wybierz_w_czyim_imieniu_wnioskujesz', repeatingSectionGrid: [] } }] } }] }] }
   const evaluate = answers => evaluateCondition(query, contextFor(definition, answers))
@@ -52,6 +57,21 @@ try {
   assert.equal(await evaluateCondition('$repeatingSectionIndex = 1', secondContext, 1), true)
   assert.equal(await evaluateCondition('tabs.questions.field.repeatingSectionGrid[field.techName="dane"].field.repeatingSectionGrid.field.__userAnswer = "Przykład"', secondContext, 1), true)
   assert.equal(await evaluateCondition('tabs.questions.field.__userAnswer[1][fieldTechName="rodzaj"].answers = "Firma"', secondContext, 1), true)
+  const visibleIn = (field, answers = {}, counts = {}) => {
+    const form = { title: 'Test', tabs: [{ questions: [{ field }] }] }
+    return sectionHasVisibleFields(field, 'field-0-0', scope => contextFor(form, answers, counts, scope), counts)
+  }
+  assert.equal(await visibleIn({ type: 'SECTION', repeatingSectionGrid: [] }), false)
+  assert.equal(await visibleIn({ type: 'SECTION', repeatingSectionGrid: [{ field: { type: 'TEXT_BLOCK' } }] }), false)
+  assert.equal(await visibleIn({ type: 'SECTION', repeatingSectionGrid: [{ field: { type: 'TEXT_FIELD' } }] }), true)
+  const conditionalSection = { type: 'SECTION', repeatingSectionGrid: [{ field: { type: 'SECTION', repeatingSectionGrid: [{ field: { type: 'TEXT_FIELD', states: [{ type: 'SHOW', query: 'tabs.questions.field.repeatingSectionGrid.field.repeatingSectionGrid.field.__userAnswer = "tak"' }] } }] } }] }
+  assert.equal(await visibleIn(conditionalSection), false)
+  assert.equal(await visibleIn(conditionalSection, { 'field-0-0-0-0-0-0': 'tak' }), true)
+  assert.equal(await visibleIn(conditionalSection, { 'field-0-0-0-0-0-0': 'nie' }), false)
+  const repeatedConditional = { type: 'REPEATING_SECTION', repeatingSectionGrid: [{ field: { type: 'TEXT_FIELD', states: [{ type: 'SHOW', query: '$repeatingSectionIndex = 1' }] } }] }
+  assert.equal(await visibleIn(repeatedConditional), false)
+  assert.equal(await visibleIn(repeatedConditional, {}, { 'field-0-0': 2 }), true)
+  assert.equal(await visibleIn({ type: 'SECTION', repeatingSectionGrid: [{ field: { type: 'TEXT_FIELD', states: [{ type: 'SHOW', query: '(' }] } }] }), true)
   for (const validation of [null, {}, { type: 'EMAIL' }, 42]) {
     const form = { title: 'Walidacja', tabs: [{ questions: [{ field: { type: 'TEXT_FIELD', title: 'Pole', validation } }] }] }
     assert.doesNotThrow(() => renderToStaticMarkup(createElement(GeneratedForm, { definition: form })))
@@ -59,11 +79,24 @@ try {
   const emailForm = { title: 'Walidacja', tabs: [{ questions: [{ field: { type: 'TEXT_FIELD', title: 'E-mail', validation: ['REQUIRED', 'EMAIL'] } }] }] }
   const emailMarkup = renderToStaticMarkup(createElement(GeneratedForm, { definition: emailForm }))
   assert.match(emailMarkup, /type="email"[^>]*required=/)
+  for (const type of ['DATE', 'DATEPICKER']) {
+    const dateForm = { title: 'Data', tabs: [{ questions: [{ field: { type, title: 'Data', defaultValue: '2024-02-29' } }] }] }
+    const dateMarkup = renderToStaticMarkup(createElement(GeneratedForm, { definition: dateForm }))
+    assert.match(dateMarkup, /type="date"/)
+    assert.match(dateMarkup, /value="2024-02-29"/)
+  }
+  const timeForm = { title: 'Godzina', tabs: [{ questions: [{ field: { type: 'TIME', title: 'Godzina', defaultValue: '14:30' } }] }] }
+  const timeMarkup = renderToStaticMarkup(createElement(GeneratedForm, { definition: timeForm }))
+  assert.match(timeMarkup, /type="time"/)
+  assert.match(timeMarkup, /value="14:30"/)
+  const voivodeshipForm = { title: 'Adres', tabs: [{ questions: [{ field: { type: 'SELECT', title: 'Województwo', dictionaryName: 'TERYT_DOWODOWY', defaultValue: '14' } }] }] }
+  assert.equal(contextFor(voivodeshipForm, {}).tabs[0].questions[0].field.__userAnswer, 'mazowieckie')
+  assert.doesNotMatch(renderToStaticMarkup(createElement(GeneratedForm, { definition: voivodeshipForm })), /nie jest jeszcze podłączony/)
   const selectDefinition = { title: 'Wniosek', tabs: [{ questions: [{ field: { type: 'SELECT', title: 'Wybór', defaultValue: 'kod', readOnly: true, options: [{ id: '1', techName: 'kod', name: 'Opcja' }] } }] }] }
   assert.equal(contextFor(selectDefinition, {}).tabs[0].questions[0].field.__userAnswer, 'Opcja')
   const markup = renderToStaticMarkup(createElement(GeneratedForm, { definition: selectDefinition }))
-  assert.match(markup, /<select[^>]*disabled=/)
-  assert.match(markup, /<option value="Opcja" selected="">Opcja<\/option>/)
+  assert.match(markup, /<button[^>]*disabled=/)
+  assert.match(markup, /field-0-0-value">Opcja<\/span>/)
   console.log('Warunki JSONata: brak odpowiedzi, zgodna i inna odpowiedź, pusta lista oraz błędne wyrażenie — OK')
 } finally {
   await server.close()

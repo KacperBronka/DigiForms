@@ -46,7 +46,8 @@ Use only these keys; ignore `model_settings`, `text_det_params`, `dt_polys`, `re
   - **Body sentence** — `Wnoszę o … w miejscowości … przy ulicy … nr ewidencyjny działki … w obrębie …`. Every blank
     in it becomes one input field, in sentence order.
   - **Footnotes** (`1) Dane nieobowiązkowe.`, `2) Podpis …`) — use them to decide optionality, then drop the text.
-  - **Not fields:** date `(data)`, signature `(podpis wnioskodawcy)`. Signing is handled by the platform; do not model it.
+  - **Not fields:** the signature and its accompanying signing date. The platform handles both. Model
+    dates that the form asks for as answers in their own right using the type-selection rules in §3.
 
 ## 3. Output structure
 
@@ -91,7 +92,33 @@ Number of links = number of tabs − 1. All ids are fresh UUID v4.
 
 `SECTION`, `TEXT_FIELD`, `RADIO` (needs `options`), `SELECT` (needs `dictionaryName`, `defaultValue` as an array),
 `FILE_UPLOADER`, `TEXT_BLOCK` (HTML in `description`), `CONSENT_SECTION` (needs `consentSectionConfig`).
-Do not invent other types. Use `TEXT_FIELD` for every free-text blank in the OCR form.
+
+### Choose the most specific field type
+
+For every input field, determine what the answer represents before assigning `field.type`. Use the
+field label, section heading, nearby instructions, units, and expected answer format together.
+Apply this rule to original OCR fields, fields copied from the reference, and pre-filled fields.
+The source of the value is decided separately under §4.
+
+| Expected answer | Required type selection |
+|---|---|
+| A numerical quantity, measurement, amount, percentage, count, or numerical year | Use the supported numeric type. Use the integer subtype when the answer must be whole and the platform supports it. Allow decimals for measurements or amounts that can be fractional. |
+| A complete calendar date explicitly requested as an answer | Use the supported date type. A numerical year or a month without a day does not by itself justify a full date control. |
+| A fixed choice or dictionary entry | Use `RADIO` with the specified options or `SELECT` with the configured dictionary, as appropriate. |
+| A textual identifier or a formatted code | Use `TEXT_FIELD` for values such as PESEL, NIP, postal codes, phone numbers, parcel numbers, and house numbers. Preserve leading zeros, letters, and separators. |
+| Another semantically specific answer | Use a more specific type, such as time or e-mail, when both the form's intent and the platform's support for that type are established. |
+| Free text or ambiguous input | Use `TEXT_FIELD`. When the intended type is unclear, report the field for review. |
+
+Use the exact type token specified by the target platform's type catalog, schema enum, or confirmed
+configuration. If those sources do not specify numeric or date tokens, use `NUMBER` and `DATE`,
+respectively, as the FormDefinition conventions for this prompt. For other semantic types, use only
+tokens confirmed by the target configuration. If the target explicitly lacks the appropriate control,
+use its supported fallback and report the limitation. Never downgrade a numeric or date field solely
+because the reference form uses `TEXT_FIELD`.
+
+Use `field.type` to specify the control. Keep `defaultValue` and `defaultValueType` in their existing
+schema-defined representation, including external reference strings. The field type alone does not
+change the JSON type of `defaultValue`.
 
 ### Layout arithmetic
 
@@ -120,26 +147,25 @@ collapse repeats. Must be **unique across the whole file**; disambiguate with a 
 
 ## 4. Pre-filled ("initial data") fields — from `GuideLines.md`
 
-Rules:
-1. A field fed from a registry is a single field with **one source and one attribute**.
-2. Set `"readOnly": true` — the PDF says registry-fed fields must be read-only; the user can never edit or fill them,
-   even when the registry has no value.
-3. `"defaultValue": "<SOURCE>.<attribute>"`, e.g. `"PESEL.name"`.
-4. `"defaultValueType": "EXTERNAL_SYSTEM"`.
-5. Only use sources and attributes from the tables below. No others.
+Determine the value source of every field from its meaning, the role of the person or entity it describes,
+and the pre-fill rules in `GuideLines.md`. Apply this decision to fields derived from OCR, copied from
+a reference, and shown only in conditional branches.
 
-Constant (non-registry) read-only text, such as the addressee, uses `readOnly: true` and a plain-text `defaultValue`
-and **no** `defaultValueType`.
+- **External data:** once a source and attribute are confirmed, write both properties on the same field:
+  `"defaultValue": "<SOURCE>.<attribute>"` and `"defaultValueType": "EXTERNAL_SYSTEM"`. Use exactly one
+  case-sensitive source/attribute pair from the catalog in §10.
+- **Literal or dictionary default:** keep the value in the form required by the schema, without
+  `defaultValueType: "EXTERNAL_SYSTEM"`. Fixed read-only text such as the addressee uses
+  `readOnly: true` and omits `defaultValueType`.
+- **Manual input:** omit both properties when there is no default. If pre-fill is required but the mapping
+  cannot be confirmed, omit both properties and report the field for review.
 
-| Source | Meaning | Attributes |
-|---|---|---|
-| `PESEL` | Rejestr PESEL | `pesel, name, surname, birthDate, citizenship, motherName, birthPlace, motherSurname, sex, fatherName, secondName, birthCountry, foreignBirthUSC, familyName, fatherSurname, maritalStatus` (`birthDate` → date picker; rest text) |
-| `PESEL_ADDRESS` | Dane zameldowania | `temporaryAddress{Voivodeship, District, Community, Place, StreetType, Street, HouseNumber, ApartmentNumber, PostalCode}` and `permanentAddress{Voivodeship, District, Community, Place, StreetType, Street, PostalCode, HouseNumber, ApartmentNumber}` (18 attributes; write them as e.g. `PESEL_ADDRESS.permanentAddressPlace`) |
-| `MLPZ` | Dane zalogowanego użytkownika | `name, secondName, surname, pesel, phoneNumber, email, country, voivodeship, district, community, place, postCode, street, building, apartment, institutionName, descriptiveOrganizationName` |
+Choose a source only when it is authorized for the field and the person's role. A matching label alone
+is insufficient. For data of the logged-in applicant, prefer `MLPZ`. Use `PESEL` or `PESEL_ADDRESS` for
+explicitly requested registry data unavailable in `MLPZ`. In `PESEL`, `birthDate` uses a date picker and the other attributes use text fields.
 
-Default choice: data about the **logged-in applicant** uses `MLPZ.*` (as in the reference). Use `PESEL.*` /
-`PESEL_ADDRESS.*` only when the form explicitly asks for registry data MLPZ does not have (birth date, parents' names,
-marital status, registered address).
+Set `readOnly: true` on external fields unless the standard-block exception in §7 applies.
+Optionality, editability and visibility do not change how an external reference is serialized.
 
 ## 5. Standard blocks (reuse verbatim in structure; titles/texts as in `test1-output.json`)
 
@@ -164,7 +190,8 @@ the title and the middle tab(s) change.
 
 ## 6. Form-specific tab(s) — derived from the OCR body
 
-Map the body sentence blank-by-blank to `TEXT_FIELD`s, one `SECTION` per logical group. For `test1`:
+Map the body sentence blank-by-blank to fields using the type-selection rules in §3. Use one `SECTION`
+per logical group. For `test1`:
 
 > `Wnoszę o ustalenie numeru porządkowego budynkowi zlokalizowanemu w miejscowości… przy ulicy… nr ewidencyjny działki… w obrębie…`
 
@@ -172,8 +199,9 @@ Map the body sentence blank-by-blank to `TEXT_FIELD`s, one `SECTION` per logical
 `Miejscowość` (`miejscowosc`), `Ulica` (`ulica_budynku`), `Numer ewidencyjny działki` (`numer_ewidencyjny_dzialki`), `Obręb` (`obreb_numer`).
 All `readOnly: false`, no `defaultValue`.
 
-Rules: field `title` = the noun phrase that precedes the blank (capitalised, no trailing punctuation); no
-`defaultValueType`; use `FILE_UPLOADER` only when the OCR mentions an attachment (`załącznik`, `do wniosku dołączam`).
+Use the noun phrase before the blank as the field `title` (capitalised, with no trailing punctuation). Apply §4
+to decide how the field gets its value. Use `FILE_UPLOADER` only when the OCR mentions an attachment
+(`załącznik`, `do wniosku dołączam`).
 Title of the form: from the heading, sentence case, diacritics restored. The reference uses
 `Wniosek o ustalenie numeru porządkowego nieruchomości` while the OCR body says "budynkowi" — if the heading and the
 reference differ, prefer the OCR heading and flag it.
@@ -188,6 +216,7 @@ reference differ, prefer the OCR heading and flag it.
 4. **readOnly vs. the PDF:** the PDF requires registry-fed fields to be read-only, yet in the reference the MLPZ address,
    phone and e-mail fields are editable (only name/surname are read-only). Default: follow the reference for the standard blocks;
    for any **new** registry-fed field follow the PDF (`readOnly: true`). Ask the owner if unsure.
+   This exception applies only to `readOnly`. Every external reference still requires the pair from §4.
 5. **Reference defects not to copy:** `SELECT` titles that are dictionary names (`TERYT_DOWODOWY`) — use `Województwo`;
    `Zgoda_sekcja` → `Zgoda`; typo `pełnomonictwo`; empty-string `defaultValue` on `ulica_siedziba`; trailing `\r\n` in queries.
    (Keep them only if asked to reproduce `test1-output.json` byte-for-byte.)
@@ -197,10 +226,11 @@ reference differ, prefer the OCR heading and flag it.
 
 1. Read `testN-input.json`; rebuild lines in reading order (§2). Note low-confidence lines.
 2. Extract: title, addressee, body blanks, footnote-based optionality.
-3. Build tabs from §5 + §6. Generate UUIDs; compute `x/y/rows/cols/questionOrder` (§3); derive unique `techName`s.
-4. Add `states` queries and `defaultValue`/`defaultValueType` for registry fields (§4).
+3. Build tabs from §5 + §6. Choose the most specific type for every input field (§3). Generate UUIDs,
+   compute `x/y/rows/cols/questionOrder`, and derive unique `techName`s (§3).
+4. Add `states` queries and serialize each field’s value source according to §4.
 5. Build `flow.links`.
-6. Write `testN-output.json`, then run the validator (§10). Fix until it prints `OK`.
+6. Check §9 and run the deterministic validator in §10 on the draft. Publish only after the checks pass.
 7. Report in the final message: title, tabs, count of fields, low-confidence OCR lines, and every decision from §7.
 
 ## 9. Hard rules (checklist)
@@ -209,55 +239,81 @@ reference differ, prefer the OCR heading and flag it.
 - Every UUID unique; every `flow` source/target is an existing tab id; no orphan tab.
 - Every tab-level question is a `SECTION`; `repeatingSectionGrid` only on sections.
 - Every `techName` unique file-wide; every `states.query` points at existing tab titles / techNames.
-- Registry-fed fields: `defaultValue` matches `^(PESEL|PESEL_ADDRESS|MLPZ)\.[A-Za-z]+$` and an allowed attribute (§4) and `defaultValueType == "EXTERNAL_SYSTEM"`.
-- Do not invent form content that is neither in the OCR nor in the standard blocks. Do not model date/signature.
+- Every external reference in `defaultValue` must have `defaultValueType: "EXTERNAL_SYSTEM"` on the same field.
+  Every `"EXTERNAL_SYSTEM"` field must have exactly one allowed reference as its string `defaultValue` (§4, §10).
+- Review each `TEXT_FIELD` before publication. If the field's meaning and the available controls establish
+  a more specific type, use that type (§3).
+- Do not invent form content that is neither in the OCR nor in the standard blocks. Omit the signature
+  and its accompanying signing date.
 - Never overwrite `testN-input.*`, `guidelines.json`, `GuideLines.md` or `test1-output.json`.
 
-## 10. Validator (save as `validate_output.py`, run `python validate_output.py testN-output.json`)
+## 10. Normalize and validate external defaults before output
+
+Run the following Python code with the draft JSON path as its only argument. It inspects every serialized
+field and repairs a missing, null or incorrect `defaultValueType` for any allowed reference. An invalid
+reference or an external field without a reference fails the check. Resolve each error using §4 and rerun
+the validator. Publish the normalized draft as `testN-output.json` only after a successful exit.
+
+The catalog below is the single list of allowed source/attribute pairs. When `GuideLines.md` adds an
+authorized system or attribute, update the catalog. The validation logic applies to every catalog entry.
 
 ```python
-import json, re, sys
+import json
+import sys
+from pathlib import Path
 
-d = json.load(open(sys.argv[1], encoding="utf-8"))
-errs, ids, techs, tab_titles = [], set(), set(), {t["title"] for t in d["tabs"]}
-SRC = {"PESEL", "PESEL_ADDRESS", "MLPZ"}
-REQ = {"id", "type", "techName", "title", "description", "options", "validation",
-       "readOnly", "repeatingSectionGrid", "questionOrder", "tooltipMessage"}
+EXTERNAL_SYSTEM = "EXTERNAL_SYSTEM"
+ALLOWED_ATTRIBUTES = {
+    "PESEL": set("""
+        pesel name surname birthDate citizenship motherName birthPlace motherSurname
+        sex fatherName secondName birthCountry foreignBirthUSC familyName fatherSurname maritalStatus
+    """.split()),
+    "PESEL_ADDRESS": {
+        prefix + suffix
+        for prefix in ("temporaryAddress", "permanentAddress")
+        for suffix in (
+            "Voivodeship", "District", "Community", "Place", "StreetType",
+            "Street", "HouseNumber", "ApartmentNumber", "PostalCode",
+        )
+    },
+    "MLPZ": set("""
+        name secondName surname pesel phoneNumber email country voivodeship district community
+        place postCode street building apartment institutionName descriptiveOrganizationName
+    """.split()),
+}
+KNOWN_SOURCE_NAMES = {source.casefold() for source in ALLOWED_ATTRIBUTES}
 
-def walk(q, top):
-    f = q["field"]
-    miss = REQ - f.keys()
-    if miss: errs.append(f"{f.get('techName')}: missing {sorted(miss)}")
-    if f["id"] in ids: errs.append(f"duplicate id {f['id']}")
-    ids.add(f["id"])
-    if f["techName"] in techs: errs.append(f"duplicate techName {f['techName']}")
-    techs.add(f["techName"])
-    if not re.fullmatch(r"[a-z0-9_]+", f["techName"]): errs.append(f"bad techName {f['techName']}")
-    if top and f["type"] != "SECTION": errs.append(f"{f['techName']}: top-level must be SECTION")
-    if not top and f["repeatingSectionGrid"]: errs.append(f"{f['techName']}: nested section")
-    if f.get("defaultValueType") == "EXTERNAL_SYSTEM":
-        if not re.fullmatch(r"(PESEL|PESEL_ADDRESS|MLPZ)\.[A-Za-z]+", f.get("defaultValue", "")):
-            errs.append(f"{f['techName']}: bad defaultValue")
-    for c in f["repeatingSectionGrid"]: walk(c, False)
 
-for t in d["tabs"]:
-    if t["id"] in ids: errs.append(f"duplicate id {t['id']}")
-    ids.add(t["id"])
-    for q in t["questions"]: walk(q, True)
+def iter_fields(questions):
+    for question in questions:
+        field = question["field"]
+        yield field
+        yield from iter_fields(field.get("repeatingSectionGrid", []))
 
-tab_ids = [t["id"] for t in d["tabs"]]
-links = d["flow"]["links"]
-if len(links) != len(tab_ids) - 1: errs.append("flow must chain all tabs")
-for l, s, t in zip(links, tab_ids, tab_ids[1:]):
-    if (l["source"], l["target"]) != (s, t): errs.append(f"link {l['id']} out of order")
 
-raw = json.dumps(d, ensure_ascii=False)
-for tab, sec, fld in re.findall(r"tabs\['([^']+)' in title\]\.questions\['([^']+)' in field\.techName\]"
-                               r"\.field\.repeatingSectionGrid\['([^']+)' in field\.techName\]", raw):
-    if tab not in tab_titles or sec not in techs or fld not in techs:
-        errs.append(f"query references missing {tab}/{sec}/{fld}")
+draft_path = Path(sys.argv[1])
+form = json.loads(draft_path.read_text(encoding="utf-8"))
+errors = []
 
-print("OK" if not errs else "\n".join(errs))
-sys.exit(bool(errs))
+for tab in form["tabs"]:
+    for field in iter_fields(tab["questions"]):
+        value = field.get("defaultValue")
+        reference = value if isinstance(value, str) else ""
+        source, separator, attribute = reference.partition(".")
+        has_known_prefix = bool(separator) and source.strip().casefold() in KNOWN_SOURCE_NAMES
+        if not has_known_prefix and field.get("defaultValueType") != EXTERNAL_SYSTEM:
+            continue
 
+        if separator and attribute in ALLOWED_ATTRIBUTES.get(source, ()):
+            field["defaultValueType"] = EXTERNAL_SYSTEM
+        else:
+            errors.append(f"{field['techName']}: invalid external defaultValue {value!r}")
+
+if errors:
+    raise SystemExit("\n".join(errors))
+
+draft_path.write_text(json.dumps(form, ensure_ascii=False, indent=4) + "\n", encoding="utf-8")
 ```
+
+If the agent only returns JSON and cannot run Python, apply the same checks before returning it. In that setup,
+the calling application must run the validator before accepting the result to enforce this rule deterministically.

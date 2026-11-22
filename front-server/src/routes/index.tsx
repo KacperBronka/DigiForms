@@ -1,11 +1,29 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, FileUpload, Loader } from '#/components/gov'
 import { isFormDefinition } from '#/components/form/GeneratedForm'
 import { DRAFT_KEY, FORM_KEY } from '#/lib/formDraft'
 
 export const Route = createFileRoute('/')({ component: Home })
+
+function ProcessingDialog() {
+  const dialog = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const element = dialog.current
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    element?.showModal()
+    return () => {
+      element?.close()
+      if (previousFocus?.isConnected) previousFocus.focus()
+    }
+  }, [])
+
+  return <dialog ref={dialog} className="gp-dialog processing-dialog" aria-label="Przetwarzanie dokumentu" onCancel={event => event.preventDefault()} tabIndex={-1}>
+    <Loader label="Trwa przetwarzanie dokumentu, prosze czekac..." />
+  </dialog>
+}
 
 function Home() {
   const navigate = useNavigate()
@@ -23,6 +41,7 @@ function Home() {
 
   async function confirmFile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (loading) return
     setError(undefined)
     if (!file) {
       setError('Wybierz plik przed potwierdzeniem.')
@@ -74,9 +93,10 @@ function Home() {
           <FileUpload id="plik" name="plik" label="Wybierz plik" hint="Dozwolone formaty: PDF, DOC, DOCX, ODS, XLSX, JPG, JPEG, PNG, JSON." accept=".pdf,.doc,.docx,.ods,.xlsx,.jpg,.jpeg,.png,.json" error={error} onChange={event => selectFile(event.currentTarget.files?.[0])} />
           {file && <p className="selected-file">Wybrany plik: <strong>{file.name}</strong></p>}
           {file && !/\.json$/i.test(file.name) && <p>Po potwierdzeniu dokument zostanie przesłany do zewnętrznego serwera w celu przetworzenia.</p>}
-          <div className="upload-actions"><Button type="submit" disabled={loading}>Potwierdź wybór</Button>{loading && <Loader label={file && /\.json$/i.test(file.name) ? 'Odczytywanie pliku…' : 'Przetwarzanie dokumentu…'} />}</div>
+          <div className="upload-actions"><Button type="submit" disabled={loading}>Potwierdź wybór</Button></div>
         </form>
       </div>
     </section>
+    {loading && <ProcessingDialog />}
   </>
 }

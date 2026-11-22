@@ -67,7 +67,6 @@ def prepare_pdf(source: Path):
                 command,
                 capture_output=True,
                 text=True,
-                timeout=120,
                 check=False,
             )
 
