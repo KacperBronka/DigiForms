@@ -49,6 +49,7 @@ class Settings:
     max_image_pages: int
     image_dpi: int
     jpeg_quality: int
+    ocr_device: str
     ocr_lang: str
     ocr_models_dir: str
     ocr_dpi: int
@@ -85,6 +86,9 @@ class Settings:
         model = text('EDENAI_MODEL', 'amazon/anthropic.claude-haiku-5-5@eu')
         if not model:
             raise ValueError('EDENAI_MODEL cannot be empty')
+        device = text('OCR_DEVICE', 'cpu').lower()
+        if device not in ('cpu', 'cuda'):
+            raise ValueError('OCR_DEVICE must be cpu or cuda')
         return cls(
             max_upload_bytes=integer('MAX_UPLOAD_BYTES', 20 * 1024 * 1024),
             port=integer('PORT', 3001, maximum=65535),
@@ -97,6 +101,7 @@ class Settings:
             max_image_pages=integer('MAX_IMAGE_PAGES', 5, minimum=0),
             image_dpi=integer('IMAGE_DPI', 150, maximum=600),
             jpeg_quality=integer('JPEG_QUALITY', 78, maximum=95),
+            ocr_device=device,
             ocr_lang=text('OCR_LANG', 'pl'),
             ocr_models_dir=text('OCR_MODELS_DIR'),
             ocr_dpi=integer('OCR_DPI', 200, maximum=600),

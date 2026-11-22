@@ -541,6 +541,56 @@ granularity and selection rules match the field. Preserve narrower option sets s
 | Kraje | The answer identifies a country, including country of birth, citizenship when expressed as a country, residence or an address abroad. | Dropdown (`SELECT`) only |
 | Numery kierunkowe | The answer identifies the international calling prefix for a telephone number. Bind the dictionary to the prefix component. Preserve a complete number supplied by an external source unless the platform supports mapping its components. | Dropdown, radio or checkbox as supported by the configuration. A single phone number takes one prefix. |
 
+### Project dictionary · Rasy psów
+
+When the requested answer identifies a dog's breed, use a single-select dropdown bound to the project dictionary
+**Rasy psów**. Recognize both an explicit label such as `Rasa psa` and a label such as `Rasa` in a section titled
+`Dane psa`. If the section covers several species, apply the binding only in the dog branch. A question such as
+`Czy pies jest rasowy?` keeps its yes/no choices. When the form permits only a specific subset of breeds,
+use the dictionary only if the configured selection can enforce that subset (§12).
+
+For this project's generated forms, use the following binding unless the target catalog supplies a different
+technical identifier. The example shows only the dictionary-related part of the field.
+
+```json
+{
+    "type": "SELECT",
+    "dictionaryName": "RASY_PSOW",
+    "options": []
+}
+```
+
+The target application must register the breed dictionary under the same identifier. If its catalog is supplied
+and lacks the dictionary, report the missing binding under the rules below. Leave the initial selection empty
+unless the form provides an approved default. When the form allows answers such as `Mieszaniec` or `Rasa nieznana`,
+verify that the catalog or a source-defined alternative accepts them. Report any gap in coverage.
+
+### Project dictionary · Marki samochodów
+
+When the form asks for a car's make, use a single-select dropdown bound to **Marki samochodów**. Recognize
+`Marka samochodu` and shorter labels such as `Marka` where the surrounding section identifies a car. For
+`Marka pojazdu`, check which vehicle categories the form accepts. If the dictionary covers only some of them,
+apply it in the matching branches and preserve the permitted answers in the others.
+
+For a combined prompt such as `Marka i model samochodu`, create two fields in the same vehicle section.
+Bind `Marka` to the make dictionary. Use a text field for `Model` when the source permits free entry.
+If the form describes multiple cars, keep each make and model together under the corresponding vehicle.
+
+Use this project binding unless the target catalog specifies a different technical identifier for car makes.
+
+```json
+{
+    "type": "SELECT",
+    "dictionaryName": "MARKI_SAMOCHODOW",
+    "options": []
+}
+```
+
+The target application supplies the entries. If a supplied catalog lacks the dictionary, omit the unresolved
+binding and report it in the review. Preserve any source-defined restriction on allowed makes (§12).
+
+### Binding and values
+
 **Binding.** Set `field.dictionaryName` to the exact technical identifier from the target configuration.
 The reference confirms `Kraje` for countries and shows `TERYT_DOWODOWY` and `TERYT_4G_DOWODOWY` in specific
 address blocks. For territorial data, verify which levels the configured dictionary returns, whether it uses

@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      target: nvidia
+      args:
+        PYTHON_IMAGE: python:3.12-slim-trixie
+        OCR_LANG: "${OCR_LANG:-pl}"
+    environment:
+      OCR_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

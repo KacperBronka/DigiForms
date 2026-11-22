@@ -1,4 +1,4 @@
-"""Local Tesseract OCR. Images travel over stdin; language data ships in Docker."""
+"""Local OCR backends for CPU and NVIDIA CUDA inference."""
 import csv
 import io
 import os
@@ -53,5 +53,37 @@ class TesseractOCR:
         return SimpleNamespace(txts=texts, boxes=boxes, scores=scores)
 
 
+def easyocr_languages(language):
+    aliases = {'pol': 'pl', 'eng': 'en'}
+    return [aliases.get(code, code) for code in language.split('+')]
+
+
+class CudaOCR:
+    def __init__(self, config):
+        import easyocr
+        import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError('CUDA OCR requires an NVIDIA GPU visible to PyTorch.')
+        self.reader = easyocr.Reader(
+            easyocr_languages(config.ocr_lang),
+            gpu='cuda',
+            model_storage_directory=config.ocr_models_dir or None,
+            download_enabled=False,
+        )
+        print(f'Local OCR running on {torch.cuda.get_device_name()} (CUDA)', flush=True)
+
+    def __call__(self, image):
+        import numpy as np
+
+        # EasyOCR accepts grayscale arrays directly.
+        lines = self.reader.readtext(np.asarray(image.convert('L')))
+        return SimpleNamespace(txts=[text for _, text, _ in lines],
+                               boxes=[box for box, _, _ in lines],
+                               scores=[score for _, _, score in lines])
+
+
 def create_ocr(config):
+    if config.ocr_device == 'cuda':
+        return CudaOCR(config)
     return TesseractOCR(config)

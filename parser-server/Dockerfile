@@ -1,4 +1,5 @@
-FROM python:3.14.10-slim-trixie
+ARG PYTHON_IMAGE=python:3.14.10-slim-trixie
+FROM ${PYTHON_IMAGE} AS parser
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -33,3 +34,17 @@ COPY main.py settings.py auth.py pdf_tools.py ocr_engine.py document_converter.p
 USER app:app
 EXPOSE 3000
 CMD ["python", "main.py"]
+
+FROM parser AS nvidia
+USER root
+ARG OCR_LANG=pl
+ENV OCR_DEVICE=cuda \
+    OCR_MODELS_DIR=/opt/easyocr/models
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128 && \
+    pip install easyocr==1.7.2
+# Fetch weights during the build, when network access and writes are permitted.
+RUN python -c "import os, easyocr; from ocr_engine import easyocr_languages; easyocr.Reader(easyocr_languages(os.environ['OCR_LANG']), gpu=False, model_storage_directory=os.environ['OCR_MODELS_DIR'], verbose=False)"
+USER app:app
+
+FROM parser AS cpu

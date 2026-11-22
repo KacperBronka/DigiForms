@@ -249,10 +249,22 @@ Frontend komunikuje się z nim pod `http://app:3000/upload` po wewnętrznej siec
 `DOCUMENT_PROCESSOR_TOKEN` jest opcjonalnym tokenem integracyjnym; zasady
 przekazywania i weryfikacji JWT opisano poniżej.
 
-Konfiguracja używa oficjalnych obrazów z konkretnymi wersjami:
+Aby uruchomić lokalny OCR na karcie NVIDIA, skonfiguruj sterownik zgodny z CUDA 12.8
+i NVIDIA Container Toolkit dla Dockera. Uruchom aplikację z katalogu głównego:
+
+```bash
+docker compose -f compose.yaml -f compose.nvidia.yaml up --build -d
+docker compose logs app
+```
+
+W logu parsera pojawi się nazwa karty po załadowaniu EasyOCR. Obraz zawiera
+wagi dla `OCR_LANG` (domyślnie polski). Po zmianie języka przebuduj obraz.
+Zwykłe `docker compose up --build` uruchamia Tesseract na CPU.
+
+Konfiguracja używa oficjalnych obrazów:
 
 - `node:22.23.5-alpine3.23` — wieloetapowy build, w obrazie runtime tylko `.output`;
-- `python:3.13.18-slim-bookworm` — Debian Slim dla zgodności bibliotek OCR z glibc;
+- `python:3.14.10-slim-trixie` — Debian Slim dla zgodności bibliotek OCR z glibc;
 - `nginx:1.30.7-alpine3.24` — proxy uruchamiane jako użytkownik `nginx`.
 
 Wersje pochodzą z katalogu Docker Official Images:
@@ -265,11 +277,10 @@ Wszystkie usługi działają bez roota, z systemem plików tylko do odczytu,
 bez capabilities i z `no-new-privileges`. Konteksty budowania mają listy
 wymaganych plików; sekrety, lokalne dane i cache nie trafiają do obrazów.
 Zapisy są dozwolone tylko w `tmpfs`. `PARSER_TMP_SIZE` (domyślnie `1g`)
-określa miejsce na przetwarzane dokumenty, a `OCR_CACHE_SIZE` (domyślnie `2g`)
-na katalog domowy parsera, modele OCR i ustawienia LibreOffice. Dopasuj je
-do dostępnej pamięci i liczby równoległych żądań. Cache modeli jest nietrwały:
-pierwszy start i ponowne uruchomienie kontenera mogą wymagać pobrania modeli.
-Parser ma dostęp do Internetu dla modeli i Eden AI; frontend działa w sieciach
+określa miejsce na przetwarzane dokumenty, a `APP_HOME_SIZE` (domyślnie `64m`)
+na katalog domowy parsera i ustawienia LibreOffice. Dopasuj je
+do dostępnej pamięci i liczby równoległych żądań.
+Modele OCR są w obrazie. Parser ma dostęp do Internetu dla Eden AI; frontend działa w sieciach
 wewnętrznych, a proxy ma osobną sieć wejściową. Limity procesów i rotacja logów
 są ustawione w Compose. Logi nie służą do przechowywania plików użytkownika.
 
@@ -333,7 +344,7 @@ parser obsługuje też lokalny `parser-server/.env`. Jawnie ustawione zmienne
 | `DOCUMENT_PROCESSOR_URL` | `http://app:3000/upload` w Compose | Endpoint parsera; poza Compose domyślnie `http://localhost:3001/upload` |
 | `DOCUMENT_PROCESSOR_TOKEN` | puste | Opcjonalny token usługowy, wyłącznie po stronie serwera |
 | `DOCUMENT_PROCESSOR_TIMEOUT_SECONDS` | `900` | Czas oczekiwania frontendu na parser, od 1 do 2147483 sekund |
-| `OCR_LANG` / `OCR_VERSION` / `OCR_DEVICE` | `pl` / `PP-OCRv6` / `cpu` | Parametry PaddleOCR; wybrany model i urządzenie muszą być obsługiwane przez zainstalowane biblioteki |
+| `OCR_LANG` / `OCR_DEVICE` | `pl` / `cpu` | Język OCR i urządzenie parsera. Plik compose.nvidia.yaml ustawia `cuda` dla EasyOCR. |
 | `MAX_OCR_CHARS` | `160000` | Maksymalny rozmiar tekstu wejściowego modelu |
 | `MAX_IMAGE_PAGES` | `5` | Liczba stron przekazywanych jako obrazy; `0` wyłącza obrazy |
 | `IMAGE_DPI` / `JPEG_QUALITY` | `150` / `78` | Rozdzielczość 1–600 DPI i jakość JPEG 1–95 |
