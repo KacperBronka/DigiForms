@@ -4,7 +4,11 @@ python-multipart
 requests
 pymupdf
 Pillow
-paddleocr
-paddlepaddle
+paddleocr>=3.7,<3.8
 onnxruntime>=1.21,<1.27
 python-dotenv
+
+python-magic==0.4.27
+olefile==0.47
+PyJWT[crypto]==2.10.1
+httpx==0.28.1

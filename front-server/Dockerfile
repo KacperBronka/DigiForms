@@ -1,4 +1,4 @@
-FROM node:22-slim AS build
+FROM node:22.22.0-alpine3.23 AS build
 
 WORKDIR /app
 COPY package*.json ./
@@ -6,7 +6,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:22-slim AS runtime
+FROM node:22.22.0-alpine3.23 AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000

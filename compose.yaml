@@ -1,31 +1,142 @@
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-job-settings: &job-settings
+  LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+  MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
+  MAX_ACTIVE_JOBS: "${MAX_ACTIVE_JOBS:-1}"
+  MAX_QUEUED_JOBS: "${MAX_QUEUED_JOBS:-2}"
+  QUEUE_TIMEOUT_SECONDS: "${QUEUE_TIMEOUT_SECONDS:-15}"
+  WORKER_TIMEOUT_SECONDS: "${WORKER_TIMEOUT_SECONDS:-180}"
+  JOB_TIMEOUT_SECONDS: "${JOB_TIMEOUT_SECONDS:-240}"
+  MAX_SANITIZED_BYTES: "${MAX_SANITIZED_BYTES:-67108864}"
+
 services:
   app:
+    logging: *logging
+    read_only: true
+    cpus: "${API_CPUS:-1.0}"
+    mem_limit: "${API_MEMORY:-512m}"
+    memswap_limit: "${API_MEMORY:-512m}"
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    volumes:
+      - worker-socket:/run/worker:ro
+    depends_on:
+      document-worker:
+        condition: service_healthy
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     build:
       context: ./parser-server
       dockerfile: Dockerfile
+      target: api
     environment:
-      EDENAI_API_KEY: "${EDENAI_API_KEY:-}"
+      <<: *job-settings
+      SERVICE_NAME: api
+      EDENAI_API_KEY: "${EDENAI_API_KEY:?Set EDENAI_API_KEY in the runtime environment}"
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
+      JWT_ENABLED: "${JWT_ENABLED:-false}"
+      JWT_ALGORITHM: "${JWT_ALGORITHM:-HS256}"
+      JWT_KEY: "${JWT_KEY:-}"
+      JWT_ISSUER: "${JWT_ISSUER:-}"
+      JWT_AUDIENCE: "${JWT_AUDIENCE:-}"
+      EDENAI_MODEL: "${EDENAI_MODEL:-gemma-4-31b-it}"
+      EDENAI_READ_TIMEOUT_SECONDS: "${EDENAI_READ_TIMEOUT_SECONDS:-180}"
       PYTHONUNBUFFERED: "1"
       PORT: "3000"
 
+  document-worker:
+    logging: *logging
+    build:
+      context: ./parser-server
+      dockerfile: Dockerfile
+      target: worker
+    network_mode: none
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: "${WORKER_CPUS:-2.0}"
+    mem_limit: "${WORKER_MEMORY:-4g}"
+    memswap_limit: "${WORKER_MEMORY:-4g}"
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777
+    volumes:
+      - worker-socket:/run/worker
+    environment:
+      <<: *job-settings
+      SERVICE_NAME: document-worker
+      MAX_DOCUMENT_PAGES: "${MAX_DOCUMENT_PAGES:-30}"
+      MAX_IMAGE_PIXELS: "${MAX_IMAGE_PIXELS:-20000000}"
+      MAX_TOTAL_PIXELS: "${MAX_TOTAL_PIXELS:-100000000}"
+      MAX_ARCHIVE_ENTRIES: "${MAX_ARCHIVE_ENTRIES:-2000}"
+      MAX_ARCHIVE_BYTES: "${MAX_ARCHIVE_BYTES:-104857600}"
+      MAX_ARCHIVE_RATIO: "${MAX_ARCHIVE_RATIO:-100}"
+      SANITIZE_DPI: "${SANITIZE_DPI:-150}"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+    healthcheck:
+      test: [CMD, python, -c, "import httpx; c = httpx.Client(transport=httpx.HTTPTransport(uds='/run/worker/worker.sock')); c.get('http://worker/health').raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   front-server:
+    logging: *logging
+    read_only: true
+    cpus: "${FRONTEND_CPUS:-1.0}"
+    mem_limit: "${FRONTEND_MEMORY:-512m}"
+    memswap_limit: "${FRONTEND_MEMORY:-512m}"
+    pids_limit: 64
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     build:
       context: ./front-server
       dockerfile: Dockerfile
     environment:
       DOCUMENT_PROCESSOR_URL: "http://app:3000/upload"
-      DOCUMENT_PROCESSOR_TOKEN: "${DOCUMENT_PROCESSOR_TOKEN:-}"
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-}"
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
+      DOCUMENT_PROCESSOR_TIMEOUT_MS: "${DOCUMENT_PROCESSOR_TIMEOUT_MS:-270000}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in the runtime environment}"
       BETTER_AUTH_URL: "${BETTER_AUTH_URL:-http://localhost:3000}"
     depends_on:
       - app
 
   proxy:
-    image: nginx:alpine
+    logging: *logging
+    read_only: true
+    cpus: "${PROXY_CPUS:-0.5}"
+    mem_limit: "${PROXY_MEMORY:-128m}"
+    memswap_limit: "${PROXY_MEMORY:-128m}"
+    pids_limit: 32
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101,mode=0700
+    environment:
+      RATE_LIMIT_RPS: "${RATE_LIMIT_RPS:-10}"
+      RATE_LIMIT_BURST: "${RATE_LIMIT_BURST:-20}"
+      UPLOAD_RATE_LIMIT_RPM: "${UPLOAD_RATE_LIMIT_RPM:-5}"
+      UPLOAD_RATE_LIMIT_BURST: "${UPLOAD_RATE_LIMIT_BURST:-2}"
+    build:
+      context: ./front-server
+      dockerfile: Dockerfile.proxy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     ports:
       - "3000:3000"
-    volumes:
-      - ./front-server/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - app
       - front-server
+
+volumes:
+  worker-socket:
