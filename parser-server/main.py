@@ -1,5 +1,5 @@
 
-"""FormForge: PaddleOCR + page images -> Eden AI streaming -> COI JSON.
+"""FormForge: Tesseract + page images -> Eden AI streaming -> COI JSON.
 
 Run: python main.py (serves on port 8000; API docs at /docs).
 Upload: POST /upload with a multipart file field named "file".
@@ -20,7 +20,9 @@ import logging
 import re
 import time
 
-import pymupdf
+from pdf_tools import render_pdf_pages
+from ocr_engine import create_ocr
+from contextlib import closing
 import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from starlette.concurrency import run_in_threadpool
@@ -43,19 +45,8 @@ MAX_UPLOAD_BYTES = settings.max_upload_bytes
 
 
 def load_ocr():
-    """Create the local model once per server process."""
-    from paddleocr import PaddleOCR
-
-    return PaddleOCR(
-        lang=settings.ocr_lang,
-        ocr_version=settings.ocr_version,
-        device=settings.ocr_device,
-        engine="onnxruntime",
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=False,
-        enable_mkldnn=False,
-    )
+    """Check local OCR language data once per process."""
+    return create_ocr(settings)
 
 
 @asynccontextmanager
@@ -74,11 +65,11 @@ app = FastAPI(title="FormForge", lifespan=lifespan)
 @app.middleware("http")
 async def verify_upload_token(request: Request, call_next):
     # Authenticate before parsing or buffering the multipart body.
-    if request.url.path.rstrip("/") == "/upload":
+    if request.url.path.rstrip("/") in ("/upload", "/api/process-document") and request.method == "POST":
         try:
             request.state.identity = authenticate(request.headers.get("Authorization"), settings)
         except HTTPException as exc:
-            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+            return JSONResponse({"detail": exc.detail, "error": exc.detail}, status_code=exc.status_code, headers=exc.headers)
     return await call_next(request)
 
 
@@ -97,43 +88,39 @@ def pdf_to_images(pdf_path: Path, max_pages: int = MAX_IMAGE_PAGES) -> list:
         raise ValueError("Page images currently require a PDF; set MAX_IMAGE_PAGES=0 for images.")
 
     images = []
-    with pymupdf.open(pdf_path) as doc:
-        for i, page in enumerate(doc):
-            if i >= max_pages:
-                break
-            pix = page.get_pixmap(dpi=IMAGE_DPI, alpha=False)
-            with Image.open(io.BytesIO(pix.tobytes("png"))) as image:
+    with closing(render_pdf_pages(pdf_path, IMAGE_DPI, max_pages)) as pages:
+        for i, image in enumerate(pages):
+            with image:
                 buffer = io.BytesIO()
-                image.convert("RGB").save(buffer, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+                image.save(buffer, format="JPEG", quality=JPEG_QUALITY, optimize=True)
             encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
             images.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{encoded}"},
             })
-            print(f"Wizualizacja strony {i + 1}: {len(buffer.getvalue()) // 1024} KB JPEG")
     return images
 
 
 def extract_ocr(document_path: Path, ocr) -> dict:
     pages = []
-    for i, result in enumerate(ocr.predict(str(document_path)), start=1):
-        raw = result.json
-        data = raw.get("res", raw)
-        texts = data.get("rec_texts", [])
-        boxes = data.get("rec_boxes", [])
-        scores = data.get("rec_scores", [])
-        lines = []
-        for n, value in enumerate(texts):
-            box = boxes[n] if n < len(boxes) else None
-            if box is not None:
-                box = box.tolist() if hasattr(box, "tolist") else list(box)
-                box = [int(x) for x in box]
-            lines.append({
-                "text": str(value),
-                "bbox": box,
-                "score": round(float(scores[n]), 3) if n < len(scores) else None,
-            })
-        pages.append({"page": i, "lines": lines})
+    with closing(render_pdf_pages(document_path, settings.ocr_dpi)) as images:
+        for page_number, image in enumerate(images, start=1):
+            with image:
+                result = ocr(image)
+            texts = result.txts if result.txts is not None else []
+            boxes = result.boxes if result.boxes is not None else []
+            scores = result.scores if result.scores is not None else []
+            lines = []
+            for index, text in enumerate(texts):
+                polygon = boxes[index] if index < len(boxes) else None
+                box = None
+                if polygon is not None:
+                    points = polygon.tolist() if hasattr(polygon, "tolist") else polygon
+                    box = [int(min(p[0] for p in points)), int(min(p[1] for p in points)),
+                           int(max(p[0] for p in points)), int(max(p[1] for p in points))]
+                lines.append({"text": str(text), "bbox": box,
+                              "score": round(float(scores[index]), 3) if index < len(scores) else None})
+            pages.append({"page": page_number, "lines": lines})
     return {"pages": pages}
 
 
@@ -145,7 +132,7 @@ def get_ocr(document_path: Path, ocr, ocr_file: Path) -> dict:
             print("OCR z cache:", ocr_file.name)
             return {"pages": cached["pages"]}
 
-    print("PaddleOCR analizuje dokument...")
+    print("Tesseract analizuje dokument...")
     ocr_data = extract_ocr(document_path, ocr)
     ocr_file.write_text(
         json.dumps({"source_sha256": document_hash, **ocr_data}, ensure_ascii=False, indent=2),
@@ -349,10 +336,10 @@ def process_upload(file: UploadFile, suffix: str, ocr, ocr_lock):
         with ExitStack() as stack:
             try:
                 pdf_path = stack.enter_context(prepare_pdf(document_path))
-            except (ValueError, pymupdf.FileDataError) as exc:
+            except ValueError as exc:
                 raise HTTPException(status_code=400, detail="Invalid document.") from exc
 
-            # PaddleOCR's shared predictor must not run simultaneous inferences.
+            # Tesseract's shared predictor must not run simultaneous inferences.
             with ocr_lock:
                 ocr_data = get_ocr(pdf_path, ocr, workdir / "ocr_result.json")
             try:
@@ -362,6 +349,17 @@ def process_upload(file: UploadFile, suffix: str, ocr, ocr_lock):
                 raise HTTPException(status_code=502, detail="Form generation failed.") from exc
 
 
+@app.get("/api/process-document")
+async def upload_settings():
+    return {"maxUploadBytes": MAX_UPLOAD_BYTES}
+
+
+@app.exception_handler(HTTPException)
+async def http_error(request: Request, exc: HTTPException):
+    return JSONResponse({"detail": exc.detail, "error": exc.detail}, status_code=exc.status_code, headers=exc.headers)
+
+
+@app.post("/api/process-document")
 @app.post("/upload")
 async def upload_document(request: Request, file: UploadFile = File(...)):
     """Upload a supported document and wait for the generated form JSON."""

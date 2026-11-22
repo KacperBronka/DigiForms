@@ -1,23 +1,7 @@
-import {HeadContent, Scripts, createRootRoute} from '@tanstack/react-router'
-import {SiteLayout} from '../components/layout/SiteLayout'
-import appCss from '../styles.css?url'
+import { Outlet, createRootRoute } from '@tanstack/react-router'
+import { SiteLayout } from '../components/layout/SiteLayout'
 
 export const Route = createRootRoute({
-    head: () => ({
-        meta: [
-            {charSet: 'utf-8'},
-            {name: 'viewport', content: 'width=device-width, initial-scale=1'},
-            {title: 'Kreator dokumentów'},
-            {name: 'description', content: 'Przygotuj dokumenty online krok po kroku.'},
-        ],
-        links: [{rel: 'stylesheet', href: appCss}],
-    }),
-    shellComponent: RootDocument,
+  component: () => <SiteLayout><Outlet /></SiteLayout>,
+  notFoundComponent: () => <div className="container info-page"><h1>Nie znaleziono strony</h1><a href="/">Wróć do kreatora dokumentów</a></div>,
 })
-
-function RootDocument({children}: { children: React.ReactNode }) {
-    return <html lang="pl">
-    <head><HeadContent/></head>
-    <body><SiteLayout>{children}</SiteLayout><Scripts/></body>
-    </html>
-}

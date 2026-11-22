@@ -1,11 +1,12 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Route as rootRoute } from './__root'
+import { createRoute } from '@tanstack/react-router'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Breadcrumbs, Button, Link, Notice } from '../components/gov'
 import { GeneratedForm, isFormDefinition } from '../components/form/GeneratedForm'
 import { downloadDefinition, FORM_KEY, readStored } from '../lib/formDraft'
 import type { StoredFile } from '../lib/formDraft'
 
-export const Route = createFileRoute('/view')({ component: View })
+export const Route = createRoute({ getParentRoute: () => rootRoute, path: '/view', component: View })
 
 function JsonPreview({ data }: { data: unknown }) {
   const dialog = useRef<HTMLDialogElement>(null)

@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Route as rootRoute } from './__root'
+import { createRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Button, FileUpload, Loader } from '#/components/gov'
@@ -7,7 +8,7 @@ import { acceptedFileTypes } from '#/lib/documentUpload'
 import { validateUpload } from '#/lib/uploadValidation'
 import { DRAFT_KEY, FORM_KEY, writeStored } from '#/lib/formDraft'
 
-export const Route = createFileRoute('/')({ component: Home })
+export const Route = createRoute({ getParentRoute: () => rootRoute, path: '/', component: Home })
 
 function ProcessingDialog() {
   const dialog = useRef<HTMLDialogElement>(null)

@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Route as rootRoute } from './__root'
+import { createRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import { Breadcrumbs, Button, Link, Notice } from '#/components/gov'
 import { DefinitionEditor, queryErrors } from '#/components/form/DefinitionEditor'
@@ -6,7 +7,7 @@ import { GeneratedForm, isFormDefinition } from '#/components/form/GeneratedForm
 import { DRAFT_KEY, FORM_KEY, readStored, writeStored } from '#/lib/formDraft'
 import type { StoredFile } from '#/lib/formDraft'
 
-export const Route = createFileRoute('/edit')({ component: Edit })
+export const Route = createRoute({ getParentRoute: () => rootRoute, path: '/edit', component: Edit })
 
 function Edit() {
   const navigate = useNavigate()

@@ -9,3 +9,5 @@
 !AGENTS.md
 !settings.py
 !auth.py
+!pdf_tools.py
+!ocr_engine.py

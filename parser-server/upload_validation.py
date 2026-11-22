@@ -5,7 +5,7 @@ from zipfile import ZipFile, BadZipFile
 from xml.etree import ElementTree
 
 import olefile
-import pymupdf
+from pdf_tools import validate_pdf
 from PIL import Image
 from fastapi import HTTPException
 
@@ -37,9 +37,7 @@ def validate_content(path: Path, suffix: str) -> None:
             with path.open('rb') as source:
                 if not source.read(8).startswith(b'%PDF-'):
                     raise ValueError('PDF header')
-            with pymupdf.open(path) as doc:
-                if not doc.is_pdf or doc.page_count == 0:
-                    raise ValueError('PDF content')
+            validate_pdf(path)
         elif suffix in ('.png', '.jpg', '.jpeg'):
             with Image.open(path) as image:
                 if image.format != ('PNG' if suffix == '.png' else 'JPEG'):

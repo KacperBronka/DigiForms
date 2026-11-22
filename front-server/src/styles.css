@@ -1,5 +1,13 @@
 
-@import "tailwindcss";
+/* Small reset retained after removing Tailwind's build-time preflight. */
+html { line-height: 1.5; -webkit-text-size-adjust: 100%; font-family: Arial, sans-serif; }
+h1, h2, h3, h4, p, figure { margin: 0; }
+a { color: inherit; text-decoration: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+img, svg { vertical-align: middle; }
+img { max-width: 100%; height: auto; }
+[hidden] { display: none !important; }
 
 * {
   box-sizing: border-box;

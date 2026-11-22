@@ -3,7 +3,8 @@ from pathlib import Path
 from contextlib import contextmanager
 import subprocess
 import tempfile
-import pymupdf
+from PIL import Image, ImageOps
+from pdf_tools import validate_pdf
 
 
 OFFICE_FORMATS = {".doc", ".docx", ".ods", ".xlsx"}
@@ -31,9 +32,7 @@ def prepare_pdf(source: Path):
 
     # PDFs don't need conversion.
     if ext == ".pdf":
-        with pymupdf.open(source) as doc:
-            if not doc.is_pdf or doc.page_count == 0:
-                raise ValueError("Invalid or empty PDF")
+        validate_pdf(source)
         yield source
         return
 
@@ -42,10 +41,10 @@ def prepare_pdf(source: Path):
         output = workdir / f"{source.stem}.pdf"
 
         if ext in IMAGE_FORMATS:
-            with pymupdf.open(source) as image:
-                pdf_bytes = image.convert_to_pdf()
-
-            output.write_bytes(pdf_bytes)
+            with Image.open(source) as image:
+                with ImageOps.exif_transpose(image) as oriented:
+                    with oriented.convert("RGB") as rgb:
+                        rgb.save(output, "PDF", resolution=150.0)
 
         elif ext in OFFICE_FORMATS:
             # Unique LibreOffice profile for each conversion.
@@ -82,8 +81,6 @@ def prepare_pdf(source: Path):
             )
 
         # Validate the produced PDF before OCR.
-        with pymupdf.open(output) as doc:
-            if not doc.is_pdf or doc.page_count == 0:
-                raise ValueError("Converted PDF is invalid")
+        validate_pdf(output)
 
         yield output

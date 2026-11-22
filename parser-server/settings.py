@@ -50,8 +50,10 @@ class Settings:
     image_dpi: int
     jpeg_quality: int
     ocr_lang: str
-    ocr_version: str
-    ocr_device: str
+    ocr_models_dir: str
+    ocr_dpi: int
+    ocr_threads: int
+    ocr_timeout_seconds: int
     jwt_enabled: bool
     jwt_public_key: str
     jwt_algorithm: str
@@ -96,8 +98,10 @@ class Settings:
             image_dpi=integer('IMAGE_DPI', 150, maximum=600),
             jpeg_quality=integer('JPEG_QUALITY', 78, maximum=95),
             ocr_lang=text('OCR_LANG', 'pl'),
-            ocr_version=text('OCR_VERSION', 'PP-OCRv6'),
-            ocr_device=text('OCR_DEVICE', 'cpu'),
+            ocr_models_dir=text('OCR_MODELS_DIR'),
+            ocr_dpi=integer('OCR_DPI', 200, maximum=600),
+            ocr_threads=integer('OCR_THREADS', 4, maximum=64),
+            ocr_timeout_seconds=integer('OCR_TIMEOUT_SECONDS', 120),
             jwt_enabled=enabled, jwt_public_key=key, jwt_algorithm=algorithm,
             jwt_issuer=issuer, jwt_audience=audience,
             jwt_leeway_seconds=integer('JWT_LEEWAY_SECONDS', 30, minimum=0, maximum=300),

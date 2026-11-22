@@ -1,4 +1,4 @@
-FROM python:3.13.18-slim-bookworm
+FROM python:3.14.10-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -7,10 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     XDG_CACHE_HOME=/home/app/.cache \
     PORT=3000
 
-# OCR wheels require glibc; Debian Slim is intentional instead of Alpine/musl.
+# Debian Slim provides LibreOffice and the local Polish/English OCR models.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        libgl1 \
+        tesseract-ocr \
+        tesseract-ocr-pol \
+        tesseract-ocr-eng \
         libreoffice-writer \
         libreoffice-calc \
         fonts-dejavu-core \
@@ -22,10 +24,11 @@ RUN apt-get update && \
 WORKDIR /app
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
-RUN python -c "import cv2; import onnxruntime as ort; assert 'CPUExecutionProvider' in ort.get_available_providers()"
+RUN python -c "import onnxruntime; assert (1, 21) <= tuple(map(int, onnxruntime.__version__.split('.')[:2])) < (1, 27); print('ONNX Runtime', onnxruntime.__version__)" \
+    && tesseract --list-langs
 
 # Explicit allowlist: no .env, uploads, tests or developer credentials in the image.
-COPY main.py settings.py auth.py document_converter.py upload_validation.py guidelines.json GuideLines.md AGENTS.md ./
+COPY main.py settings.py auth.py pdf_tools.py ocr_engine.py document_converter.py upload_validation.py guidelines.json GuideLines.md AGENTS.md ./
 
 USER app:app
 EXPOSE 3000

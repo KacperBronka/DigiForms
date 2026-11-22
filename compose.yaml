@@ -31,8 +31,9 @@ services:
       IMAGE_DPI: "${IMAGE_DPI:-150}"
       JPEG_QUALITY: "${JPEG_QUALITY:-78}"
       OCR_LANG: "${OCR_LANG:-pl}"
-      OCR_VERSION: "${OCR_VERSION:-PP-OCRv6}"
-      OCR_DEVICE: "${OCR_DEVICE:-cpu}"
+      OCR_DPI: "${OCR_DPI:-200}"
+      OCR_TIMEOUT_SECONDS: "${OCR_TIMEOUT_SECONDS:-120}"
+      OCR_THREADS: "${OCR_THREADS:-4}"
       JWT_ENABLED: "${JWT_ENABLED:-false}"
       JWT_PUBLIC_KEY: "${JWT_PUBLIC_KEY:-}"
       JWT_ALGORITHM: "${JWT_ALGORITHM:-RS256}"
@@ -42,8 +43,8 @@ services:
       PORT: "3000"
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=${PARSER_TMP_SIZE:-1g},mode=1777
-      # OCR model caches and LibreOffice preferences; never persisted to a host volume.
-      - /home/app:rw,nosuid,nodev,size=${OCR_CACHE_SIZE:-2g},uid=10001,gid=10001,mode=0700
+      # LibreOffice preferences only; models are read from the image.
+      - /home/app:rw,nosuid,nodev,size=${APP_HOME_SIZE:-64m},uid=10001,gid=10001,mode=0700
     pids_limit: 512
     networks:
       - backend
@@ -53,64 +54,36 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      # First startup downloads OCR models; allow time for that initialization.
-      start_period: 10m
+      # Local models are bundled in the image; allow time for OCR initialization.
+      start_period: 2m
 
   front-server:
     <<: *hardening
     build:
       context: ./front-server
       dockerfile: Dockerfile
-    user: "1000:1000"
-    environment:
-      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-20971520}"
-      DOCUMENT_PROCESSOR_URL: "${DOCUMENT_PROCESSOR_URL:-http://app:3000/upload}"
-      DOCUMENT_PROCESSOR_TOKEN: "${DOCUMENT_PROCESSOR_TOKEN:-}"
-      DOCUMENT_PROCESSOR_TIMEOUT_SECONDS: "${DOCUMENT_PROCESSOR_TIMEOUT_SECONDS:-900}"
-      JWT_ENABLED: "${JWT_ENABLED:-false}"
+    user: nginx
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
     pids_limit: 128
     networks:
-      - web
+      - ingress
       - backend
     depends_on:
       app:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/process-document').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
-
-  proxy:
-    <<: *hardening
-    image: nginx:1.30.7-alpine3.24
-    user: nginx
-    # Bypass image startup scripts that try to rewrite read-only configuration.
-    entrypoint: ["nginx"]
-    command: ["-g", "daemon off;"]
-    ports:
-      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
-    volumes:
-      - ./front-server/nginx-runtime.conf:/etc/nginx/nginx.conf:ro
-      - ./front-server/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
-    pids_limit: 128
-    networks:
-      - web
-      - ingress
-    depends_on:
-      front-server:
-        condition: service_healthy
+      start_period: 10s
 
 networks:
   ingress:
-  web:
-    internal: true
   backend:
     internal: true
-  # Only the OCR parser requires Internet access (models and Eden AI).
+  # Only the parser requires egress for the accepted Eden AI integration.
   egress:
