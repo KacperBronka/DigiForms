@@ -1,3 +1,4 @@
+![Logo](./.github/logo.jpg)
 
 # digiForms - cyfryuzacja formularzy
 
